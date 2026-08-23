@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	fmt.Println("Hello, World!")
+	fmt.Println("Go Human Virtual Queue!")
 
 	repositoryInstance := repository.InitRepository()
 	serverInstance := server.InitServer()

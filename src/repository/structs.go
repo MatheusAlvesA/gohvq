@@ -33,16 +33,19 @@ func (h *QueueHead) addItem(item *QueueItem) {
 	h.LastItem = item
 }
 
-func (h *QueueHead) popItem() *QueueItem {
+func (h *QueueHead) PopItem() *QueueItem {
 	if h.FirstItem == nil {
 		return nil
 	}
 	rItem := h.FirstItem
 	h.FirstItem = h.FirstItem.Next
-	h.Length.Store(h.Length.Load() - 1)
+	h.Deleted.Add(1)
 	if h.FirstItem == nil {
 		h.LastItem = nil
 		h.Length.Store(0)
+		h.Deleted.Store(0)
+	} else {
+		h.FirstItem.Previus = nil
 	}
 	return rItem
 }

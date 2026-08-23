@@ -11,9 +11,11 @@ const KEY_SIZE uint = 64
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 type Repository struct {
-	Head    *QueueHead
-	ItemMap *map[string]*QueueItem
-	mu      sync.RWMutex
+	Head        *QueueHead
+	ItemMap     *map[string]*QueueItem
+	FinishedMap *map[string]*QueueItem
+	mu          sync.RWMutex
+	muFinished  sync.RWMutex
 }
 
 func generateRandomKey() (string, error) {
@@ -65,6 +67,61 @@ func (r *Repository) CreateItem() (*QueueItem, error) {
 	return newItem, nil
 }
 
+func (r *Repository) GetCurrentQueueSize() uint64 {
+	deleted := r.Head.Deleted.Load()
+	length := r.Head.Length.Load()
+	if length < deleted {
+		return 0
+	}
+
+	return length - deleted
+}
+
+func (r *Repository) FinishItems(n uint) []*QueueItem {
+	if n == 0 {
+		return make([]*QueueItem, 0)
+	}
+	r.mu.Lock()
+	r.muFinished.Lock()
+	defer r.mu.Unlock()
+	defer r.muFinished.Unlock()
+
+	var resultList []*QueueItem
+	current := r.Head.PopItem()
+	for current != nil {
+		current.Next = nil
+		current.Previus = nil
+		delete(*r.ItemMap, current.Key)
+		(*r.FinishedMap)[current.Key] = current
+		resultList = append(resultList, current)
+		n--
+		if n <= 0 {
+			break
+		}
+		current = r.Head.PopItem()
+	}
+
+	return resultList
+}
+
+func (r *Repository) GetFinished(key string) *QueueItem {
+	r.muFinished.RLock()
+	defer r.muFinished.RUnlock()
+
+	return (*r.FinishedMap)[key]
+}
+
+func (r *Repository) DeleteFinished(key string) *QueueItem {
+	r.muFinished.Lock()
+	defer r.muFinished.Unlock()
+
+	item := (*r.FinishedMap)[key]
+	if item != nil {
+		delete(*r.FinishedMap, key)
+	}
+	return item
+}
+
 func (r *Repository) GetAndPingItemByKey(key string) (*QueueItem, uint64) {
 	r.mu.RLock()
 	item := (*r.ItemMap)[key]
@@ -85,7 +142,8 @@ func (r *Repository) GetAndPingItemByKey(key string) (*QueueItem, uint64) {
 
 func InitRepository() *Repository {
 	return &Repository{
-		Head:    &QueueHead{},
-		ItemMap: &map[string]*QueueItem{},
+		Head:        &QueueHead{},
+		ItemMap:     &map[string]*QueueItem{},
+		FinishedMap: &map[string]*QueueItem{},
 	}
 }
