@@ -3,13 +3,17 @@ package repository
 import (
 	"crypto/rand"
 	"math/big"
+	"sync"
+	"time"
 )
 
 const KEY_SIZE uint = 64
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 type Repository struct {
-	Head *QueueHead
+	Head    *QueueHead
+	ItemMap *map[string]*QueueItem
+	mu      sync.RWMutex
 }
 
 func generateRandomKey() (string, error) {
@@ -41,31 +45,47 @@ func IsValidKey(key string) bool {
 }
 
 func (r *Repository) CreateItem() (*QueueItem, error) {
-	newKey, err := generateRandomKey()
-	if err != nil {
-		return nil, err
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	selectedKey := ""
+	for selectedKey == "" || (*r.ItemMap)[selectedKey] != nil {
+		newKey, err := generateRandomKey()
+		if err != nil {
+			return nil, err
+		}
+		selectedKey = newKey
 	}
+
 	newItem := new(QueueItem)
-	newItem.Key = newKey
+	newItem.Key = selectedKey
+	newItem.CreatedAt = time.Now().Unix()
+	newItem.LastPing.Store(time.Now().Unix())
 	r.Head.addItem(newItem)
+	(*r.ItemMap)[selectedKey] = newItem
 	return newItem, nil
 }
 
 func (r *Repository) GetAndPingItemByKey(key string) (*QueueItem, uint64) {
-	currentItem := r.Head.firstItem
-	var counter uint64 = 0
-	for currentItem != nil {
-		if currentItem.Key == key {
-			return currentItem, counter
-		}
-		currentItem = currentItem.Next
-		counter++
+	r.mu.RLock()
+	item := (*r.ItemMap)[key]
+	r.mu.RUnlock()
+	if item == nil {
+		return nil, 0
 	}
-	return nil, counter
+
+	item.LastPing.Store(time.Now().Unix())
+	deleted := r.Head.Deleted.Load()
+	var position uint64 = 0
+	if deleted < item.EnterPos {
+		position = item.EnterPos - deleted
+	}
+
+	return item, position
 }
 
 func InitRepository() *Repository {
 	return &Repository{
-		Head: &QueueHead{},
+		Head:    &QueueHead{},
+		ItemMap: &map[string]*QueueItem{},
 	}
 }

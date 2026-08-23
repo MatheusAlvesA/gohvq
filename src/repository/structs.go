@@ -1,37 +1,48 @@
 package repository
 
+import "sync/atomic"
+
 type QueueHead struct {
-	firstItem *QueueItem
-	lastItem  *QueueItem
-	length    uint64
+	FirstItem *QueueItem
+	LastItem  *QueueItem
+	Length    atomic.Uint64
+	Deleted   atomic.Uint64
 }
 
 type QueueItem struct {
-	Key  string
-	Next *QueueItem
+	Key       string
+	CreatedAt int64
+	LastPing  atomic.Int64
+	EnterPos  uint64
+	Next      *QueueItem
+	Previus   *QueueItem
 }
 
 func (h *QueueHead) addItem(item *QueueItem) {
-	if h.firstItem == nil {
-		h.firstItem = item
-		h.lastItem = item
+	item.Next = nil
+	item.Previus = nil
+	item.EnterPos = h.Length.Load()
+	h.Length.Add(1)
+	if h.FirstItem == nil {
+		h.FirstItem = item
+		h.LastItem = item
 		return
 	}
-	h.lastItem.Next = item
-	h.lastItem = item
-	h.length++
+	h.LastItem.Next = item
+	item.Previus = h.LastItem
+	h.LastItem = item
 }
 
 func (h *QueueHead) popItem() *QueueItem {
-	if h.firstItem == nil {
+	if h.FirstItem == nil {
 		return nil
 	}
-	rItem := h.firstItem
-	h.firstItem = h.firstItem.Next
-	h.length--
-	if h.firstItem == nil {
-		h.lastItem = nil
-		h.length = 0
+	rItem := h.FirstItem
+	h.FirstItem = h.FirstItem.Next
+	h.Length.Store(h.Length.Load() - 1)
+	if h.FirstItem == nil {
+		h.LastItem = nil
+		h.Length.Store(0)
 	}
 	return rItem
 }
