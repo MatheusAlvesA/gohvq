@@ -77,6 +77,19 @@ func (r *Repository) GetCurrentQueueSize() uint64 {
 	return length - deleted
 }
 
+func (r *Repository) ClearQueue() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.Head = &QueueHead{}
+	r.ItemMap = &map[string]*QueueItem{}
+}
+
+func (r *Repository) ClearFinished() {
+	r.muFinished.Lock()
+	defer r.muFinished.Unlock()
+	r.FinishedMap = &map[string]*QueueItem{}
+}
+
 func (r *Repository) FinishItems(n uint) []*QueueItem {
 	if n == 0 {
 		return make([]*QueueItem, 0)
@@ -88,9 +101,11 @@ func (r *Repository) FinishItems(n uint) []*QueueItem {
 
 	var resultList []*QueueItem
 	current := r.Head.PopItem()
+	now := time.Now().Unix()
 	for current != nil {
 		current.Next = nil
 		current.Previus = nil
+		current.FinishedAt = now
 		delete(*r.ItemMap, current.Key)
 		(*r.FinishedMap)[current.Key] = current
 		resultList = append(resultList, current)

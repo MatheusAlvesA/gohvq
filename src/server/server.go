@@ -47,12 +47,20 @@ func handlePosition(s *Server, w http.ResponseWriter, r *http.Request) {
 	}
 	item, position := s.repo.GetAndPingItemByKey(searchKey)
 	if item == nil {
+		item = s.repo.GetFinished(searchKey)
+		position = 0
+	}
+	if item == nil {
 		w.WriteHeader(http.StatusNotFound)
 		json.MarshalWrite(w, map[string]string{"message": "Item not found"})
 		return
 	}
 
-	json.MarshalWrite(w, map[string]any{"key": item.Key, "position": position})
+	json.MarshalWrite(w, map[string]any{
+		"key":        item.Key,
+		"position":   position,
+		"finishedAt": item.FinishedAt,
+	})
 }
 
 func handleAdminFinish(s *Server, w http.ResponseWriter, r *http.Request) {
@@ -103,6 +111,32 @@ func handleAdminDeleteFinished(s *Server, w http.ResponseWriter, r *http.Request
 	json.MarshalWrite(w, map[string]any{"key": key})
 }
 
+func handleAdminClearFinished(s *Server, w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if s.repo == nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.MarshalWrite(w, map[string]string{"message": "Repository not set"})
+		return
+	}
+	s.repo.ClearFinished()
+
+	w.WriteHeader(http.StatusOK)
+	json.MarshalWrite(w, map[string]string{"status": "ok"})
+}
+
+func handleAdminClearQueue(s *Server, w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if s.repo == nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.MarshalWrite(w, map[string]string{"message": "Repository not set"})
+		return
+	}
+	s.repo.ClearQueue()
+
+	w.WriteHeader(http.StatusOK)
+	json.MarshalWrite(w, map[string]string{"status": "ok"})
+}
+
 func handleAdminGetFinished(s *Server, w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if s.repo == nil {
@@ -146,6 +180,12 @@ func (s *Server) Start() error {
 	})
 	mux.HandleFunc("DELETE /admin/finishedItem/{key}", func(w http.ResponseWriter, r *http.Request) {
 		handleAdminDeleteFinished(s, w, r)
+	})
+	mux.HandleFunc("DELETE /admin/clearFinished", func(w http.ResponseWriter, r *http.Request) {
+		handleAdminClearFinished(s, w, r)
+	})
+	mux.HandleFunc("DELETE /admin/clearQueue", func(w http.ResponseWriter, r *http.Request) {
+		handleAdminClearQueue(s, w, r)
 	})
 	return http.ListenAndServe(s.Addr, mux)
 }

@@ -10,12 +10,13 @@ type QueueHead struct {
 }
 
 type QueueItem struct {
-	Key       string
-	CreatedAt int64
-	LastPing  atomic.Int64
-	EnterPos  uint64
-	Next      *QueueItem
-	Previus   *QueueItem
+	Key        string
+	CreatedAt  int64
+	LastPing   atomic.Int64
+	EnterPos   uint64
+	FinishedAt int64
+	Next       *QueueItem
+	Previus    *QueueItem
 }
 
 func (h *QueueHead) addItem(item *QueueItem) {
