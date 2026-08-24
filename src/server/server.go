@@ -2,14 +2,16 @@ package server
 
 import (
 	"MatheusAlvesA/gohvq/src/repository"
+	"context"
 	"encoding/json/v2"
 	"net/http"
 	"strconv"
+	"time"
 )
 
 type Server struct {
-	Addr string
-	repo *repository.Repository
+	Server *http.Server
+	repo   *repository.Repository
 }
 
 func handleEnter(s *Server, w http.ResponseWriter, _ *http.Request) {
@@ -163,8 +165,35 @@ func handleAdminGetFinished(s *Server, w http.ResponseWriter, r *http.Request) {
 	json.MarshalWrite(w, map[string]any{"key": item.Key, "createdAt": item.CreatedAt})
 }
 
-func (s *Server) Start() error {
+func (s *Server) Start() {
+	go func() {
+		err := s.Server.ListenAndServe()
+		if err != nil {
+			// TODOlogs
+		}
+	}()
+}
+func (s *Server) Stop() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := s.Server.Shutdown(ctx); err != nil {
+		//TODO: Log
+	}
+}
+
+func (s *Server) SetRepository(repo *repository.Repository) {
+	s.repo = repo
+}
+
+func InitServer() *Server {
 	mux := http.NewServeMux()
+	s := &Server{
+		Server: &http.Server{
+			Addr:    "0.0.0.0:4242",
+			Handler: mux,
+		},
+	}
 
 	mux.HandleFunc("POST /enter", func(w http.ResponseWriter, r *http.Request) {
 		handleEnter(s, w, r)
@@ -187,15 +216,6 @@ func (s *Server) Start() error {
 	mux.HandleFunc("DELETE /admin/clearQueue", func(w http.ResponseWriter, r *http.Request) {
 		handleAdminClearQueue(s, w, r)
 	})
-	return http.ListenAndServe(s.Addr, mux)
-}
 
-func (s *Server) SetRepository(repo *repository.Repository) {
-	s.repo = repo
-}
-
-func InitServer() *Server {
-	return &Server{
-		Addr: "0.0.0.0:4242",
-	}
+	return s
 }
