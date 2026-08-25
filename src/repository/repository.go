@@ -15,8 +15,8 @@ const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 type Repository struct {
 	Head        *QueueHead
-	ItemMap     *map[string]*QueueItem
-	FinishedMap *map[string]*QueueItem
+	ItemMap     map[string]*QueueItem
+	FinishedMap map[string]*QueueItem
 	lastClear   int64
 	stopSignal  bool
 	wg          sync.WaitGroup
@@ -56,7 +56,7 @@ func (r *Repository) CreateItem() (*QueueItem, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	selectedKey := ""
-	for selectedKey == "" || (*r.ItemMap)[selectedKey] != nil {
+	for selectedKey == "" || r.ItemMap[selectedKey] != nil {
 		newKey, err := generateRandomKey()
 		if err != nil {
 			return nil, err
@@ -69,7 +69,7 @@ func (r *Repository) CreateItem() (*QueueItem, error) {
 	newItem.CreatedAt = time.Now().Unix()
 	newItem.LastPing.Store(time.Now().Unix())
 	r.Head.addItem(newItem)
-	(*r.ItemMap)[selectedKey] = newItem
+	r.ItemMap[selectedKey] = newItem
 	return newItem, nil
 }
 
@@ -87,13 +87,13 @@ func (r *Repository) ClearQueue() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.Head = &QueueHead{}
-	r.ItemMap = &map[string]*QueueItem{}
+	r.ItemMap = map[string]*QueueItem{}
 }
 
 func (r *Repository) ClearFinished() {
 	r.muFinished.Lock()
 	defer r.muFinished.Unlock()
-	r.FinishedMap = &map[string]*QueueItem{}
+	r.FinishedMap = map[string]*QueueItem{}
 }
 
 func (r *Repository) FinishItems(n uint) []*QueueItem {
@@ -112,8 +112,8 @@ func (r *Repository) FinishItems(n uint) []*QueueItem {
 		current.Next = nil
 		current.Previus = nil
 		current.FinishedAt = now
-		delete(*r.ItemMap, current.Key)
-		(*r.FinishedMap)[current.Key] = current
+		delete(r.ItemMap, current.Key)
+		r.FinishedMap[current.Key] = current
 		resultList = append(resultList, current)
 		n--
 		if n <= 0 {
@@ -129,23 +129,23 @@ func (r *Repository) GetFinished(key string) *QueueItem {
 	r.muFinished.RLock()
 	defer r.muFinished.RUnlock()
 
-	return (*r.FinishedMap)[key]
+	return r.FinishedMap[key]
 }
 
 func (r *Repository) DeleteFinished(key string) *QueueItem {
 	r.muFinished.Lock()
 	defer r.muFinished.Unlock()
 
-	item := (*r.FinishedMap)[key]
+	item := r.FinishedMap[key]
 	if item != nil {
-		delete(*r.FinishedMap, key)
+		delete(r.FinishedMap, key)
 	}
 	return item
 }
 
 func (r *Repository) GetAndPingItemByKey(key string) (*QueueItem, uint64) {
 	r.mu.RLock()
-	item := (*r.ItemMap)[key]
+	item := r.ItemMap[key]
 	r.mu.RUnlock()
 	if item == nil {
 		return nil, 0
@@ -197,7 +197,7 @@ func (r *Repository) doClear() {
 			}
 			tmpNext := currentItem.Next
 			r.Head.Detach(currentItem)
-			delete(*r.ItemMap, currentItem.Key)
+			delete(r.ItemMap, currentItem.Key)
 			r.Head.Deleted.Add(1)
 			currentItem = tmpNext
 		}
@@ -216,7 +216,7 @@ func (r *Repository) Stop() {
 func InitRepository() *Repository {
 	return &Repository{
 		Head:        &QueueHead{},
-		ItemMap:     &map[string]*QueueItem{},
-		FinishedMap: &map[string]*QueueItem{},
+		ItemMap:     map[string]*QueueItem{},
+		FinishedMap: map[string]*QueueItem{},
 	}
 }
