@@ -6,14 +6,13 @@ type QueueHead struct {
 	FirstItem *QueueItem
 	LastItem  *QueueItem
 	Length    atomic.Uint64
-	Deleted   atomic.Uint64
 }
 
 type QueueItem struct {
 	Key        string
 	CreatedAt  int64
 	LastPing   atomic.Int64
-	EnterPos   uint64
+	Position   uint64
 	FinishedAt int64
 	Next       *QueueItem
 	Previus    *QueueItem
@@ -22,7 +21,7 @@ type QueueItem struct {
 func (h *QueueHead) addItem(item *QueueItem) {
 	item.Next = nil
 	item.Previus = nil
-	item.EnterPos = h.Length.Load()
+	item.Position = h.Length.Load()
 	h.Length.Add(1)
 	if h.FirstItem == nil {
 		h.FirstItem = item
@@ -40,11 +39,10 @@ func (h *QueueHead) PopItem() *QueueItem {
 	}
 	rItem := h.FirstItem
 	h.FirstItem = h.FirstItem.Next
-	h.Deleted.Add(1)
+	h.Length.Store(h.Length.Load() - 1)
 	if h.FirstItem == nil {
 		h.LastItem = nil
 		h.Length.Store(0)
-		h.Deleted.Store(0)
 	} else {
 		h.FirstItem.Previus = nil
 	}
@@ -52,6 +50,7 @@ func (h *QueueHead) PopItem() *QueueItem {
 }
 
 func (h *QueueHead) Detach(i *QueueItem) {
+	h.Length.Store(h.Length.Load() - 1)
 	if i.Previus != nil {
 		i.Previus.Next = i.Next
 	}

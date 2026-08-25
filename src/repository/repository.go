@@ -74,13 +74,7 @@ func (r *Repository) CreateItem() (*QueueItem, error) {
 }
 
 func (r *Repository) GetCurrentQueueSize() uint64 {
-	deleted := r.Head.Deleted.Load()
-	length := r.Head.Length.Load()
-	if length < deleted {
-		return 0
-	}
-
-	return length - deleted
+	return r.Head.Length.Load()
 }
 
 func (r *Repository) ClearQueue() {
@@ -143,22 +137,16 @@ func (r *Repository) DeleteFinished(key string) *QueueItem {
 	return item
 }
 
-func (r *Repository) GetAndPingItemByKey(key string) (*QueueItem, uint64) {
+func (r *Repository) GetAndPingItemByKey(key string) *QueueItem {
 	r.mu.RLock()
 	item := r.ItemMap[key]
 	r.mu.RUnlock()
 	if item == nil {
-		return nil, 0
+		return nil
 	}
 
 	item.LastPing.Store(time.Now().Unix())
-	deleted := r.Head.Deleted.Load()
-	var position uint64 = 0
-	if deleted < item.EnterPos {
-		position = item.EnterPos - deleted
-	}
-
-	return item, position
+	return item
 }
 
 func (r *Repository) clearTask() {
@@ -185,7 +173,9 @@ func (r *Repository) doClear() {
 
 	currentItem := r.Head.FirstItem
 	timeout := time.NewTimer(time.Duration(CLEAR_MAX_TIME) * time.Second)
+	var currentPosition uint64 = 0
 	for currentItem != nil {
+		currentItem.Position = currentPosition
 		select {
 		case <-timeout.C:
 			return
@@ -193,12 +183,12 @@ func (r *Repository) doClear() {
 			elapsedTimeSeconds := now - currentItem.LastPing.Load()
 			if elapsedTimeSeconds <= PING_TIMEOUT {
 				currentItem = currentItem.Next
+				currentPosition++
 				continue
 			}
 			tmpNext := currentItem.Next
 			r.Head.Detach(currentItem)
 			delete(r.ItemMap, currentItem.Key)
-			r.Head.Deleted.Add(1)
 			currentItem = tmpNext
 		}
 	}

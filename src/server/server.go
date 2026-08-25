@@ -47,10 +47,9 @@ func handlePosition(s *Server, w http.ResponseWriter, r *http.Request) {
 		json.MarshalWrite(w, map[string]string{"message": "Invalid key"})
 		return
 	}
-	item, position := s.repo.GetAndPingItemByKey(searchKey)
+	item := s.repo.GetAndPingItemByKey(searchKey)
 	if item == nil {
 		item = s.repo.GetFinished(searchKey)
-		position = 0
 	}
 	if item == nil {
 		w.WriteHeader(http.StatusNotFound)
@@ -60,7 +59,7 @@ func handlePosition(s *Server, w http.ResponseWriter, r *http.Request) {
 
 	json.MarshalWrite(w, map[string]any{
 		"key":        item.Key,
-		"position":   position,
+		"position":   item.Position,
 		"finishedAt": item.FinishedAt,
 	})
 }
