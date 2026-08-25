@@ -18,7 +18,7 @@ type QueueItem struct {
 	Previus    *QueueItem
 }
 
-func (h *QueueHead) addItem(item *QueueItem) {
+func (h *QueueHead) AddItem(item *QueueItem) {
 	item.Next = nil
 	item.Previus = nil
 	item.Position = h.Length.Load()

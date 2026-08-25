@@ -68,7 +68,7 @@ func (r *Repository) CreateItem() (*QueueItem, error) {
 	newItem.Key = selectedKey
 	newItem.CreatedAt = time.Now().Unix()
 	newItem.LastPing.Store(time.Now().Unix())
-	r.Head.addItem(newItem)
+	r.Head.AddItem(newItem)
 	r.ItemMap[selectedKey] = newItem
 	return newItem, nil
 }
