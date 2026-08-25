@@ -162,7 +162,7 @@ func (r *Repository) GetAndPingItemByKey(key string) (*QueueItem, uint64) {
 }
 
 func (r *Repository) clearTask() {
-	ticker := time.NewTicker(time.Duration(min(MIN_PING_TIMEOUT, PING_TIMEOUT)) * time.Second)
+	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 	defer r.wg.Done()
 
@@ -184,17 +184,23 @@ func (r *Repository) doClear() {
 	now := time.Now().Unix()
 
 	currentItem := r.Head.FirstItem
+	timeout := time.NewTimer(time.Duration(CLEAR_MAX_TIME) * time.Second)
 	for currentItem != nil {
-		elapsedTimeSeconds := now - currentItem.LastPing.Load()
-		if elapsedTimeSeconds <= PING_TIMEOUT {
-			currentItem = currentItem.Next
-			continue
+		select {
+		case <-timeout.C:
+			return
+		default:
+			elapsedTimeSeconds := now - currentItem.LastPing.Load()
+			if elapsedTimeSeconds <= PING_TIMEOUT {
+				currentItem = currentItem.Next
+				continue
+			}
+			tmpNext := currentItem.Next
+			r.Head.Detach(currentItem)
+			delete(*r.ItemMap, currentItem.Key)
+			r.Head.Deleted.Add(1)
+			currentItem = tmpNext
 		}
-		tmpNext := currentItem.Next
-		r.Head.Detach(currentItem)
-		delete(*r.ItemMap, currentItem.Key)
-		r.Head.Deleted.Add(1)
-		currentItem = tmpNext
 	}
 }
 
