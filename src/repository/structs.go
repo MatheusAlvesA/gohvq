@@ -50,3 +50,20 @@ func (h *QueueHead) PopItem() *QueueItem {
 	}
 	return rItem
 }
+
+func (h *QueueHead) Detach(i *QueueItem) {
+	if i.Previus != nil {
+		i.Previus.Next = i.Next
+	}
+	if i.Next != nil {
+		i.Next.Previus = i.Previus
+	}
+	if h.FirstItem == i {
+		h.FirstItem = i.Next
+	}
+	if h.LastItem == i {
+		h.LastItem = i.Previus
+	}
+	i.Next = nil
+	i.Previus = nil
+}

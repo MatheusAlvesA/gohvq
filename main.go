@@ -20,8 +20,12 @@ func main() {
 
 	serverInstance.SetRepository(repositoryInstance)
 
+	repositoryInstance.Start()
 	serverInstance.Start()
 
 	<-shutdownCall
+	fmt.Println()
 	fmt.Println("Shutting Down...")
+	serverInstance.Stop()
+	repositoryInstance.Stop()
 }

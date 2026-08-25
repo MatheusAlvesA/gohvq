@@ -30,7 +30,7 @@ func handleEnter(s *Server, w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 	json.MarshalWrite(w, map[string]any{
 		"key":      item.Key,
-		"position": s.repo.GetCurrentQueueSize(),
+		"position": max(0, s.repo.GetCurrentQueueSize()-1),
 	})
 }
 

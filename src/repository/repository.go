@@ -8,12 +8,18 @@ import (
 )
 
 const KEY_SIZE uint = 64
+const PING_TIMEOUT int64 = 60
+const MIN_PING_TIMEOUT int64 = 10
+const CLEAR_MAX_TIME uint = 1
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 type Repository struct {
 	Head        *QueueHead
 	ItemMap     *map[string]*QueueItem
 	FinishedMap *map[string]*QueueItem
+	lastClear   int64
+	stopSignal  bool
+	wg          sync.WaitGroup
 	mu          sync.RWMutex
 	muFinished  sync.RWMutex
 }
@@ -153,6 +159,53 @@ func (r *Repository) GetAndPingItemByKey(key string) (*QueueItem, uint64) {
 	}
 
 	return item, position
+}
+
+func (r *Repository) clearTask() {
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	defer r.wg.Done()
+
+	for true {
+		<-ticker.C
+		if r.stopSignal {
+			return
+		}
+		now := time.Now().Unix()
+		if (now - r.lastClear) < min(PING_TIMEOUT, MIN_PING_TIMEOUT) {
+			continue
+		}
+		r.doClear()
+	}
+}
+func (r *Repository) doClear() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	now := time.Now().Unix()
+	var toRemove []string
+	currentItem := r.Head.FirstItem
+	for currentItem != nil {
+		elapsedTimeSeconds := now - currentItem.LastPing.Load()
+		if elapsedTimeSeconds > PING_TIMEOUT {
+			toRemove = append(toRemove, currentItem.Key)
+		}
+		currentItem = currentItem.Next
+	}
+	for _, key := range toRemove {
+		itemToDelete := (*r.ItemMap)[key]
+		r.Head.Detach(itemToDelete)
+		delete(*r.ItemMap, key)
+		r.Head.Deleted.Add(1)
+	}
+}
+
+func (r *Repository) Start() {
+	r.wg.Add(1)
+	go r.clearTask()
+}
+func (r *Repository) Stop() {
+	r.stopSignal = true
+	r.wg.Wait()
 }
 
 func InitRepository() *Repository {
