@@ -1,6 +1,7 @@
 package main
 
 import (
+	"MatheusAlvesA/gohvq/src/log"
 	"MatheusAlvesA/gohvq/src/repository"
 	"MatheusAlvesA/gohvq/src/server"
 	"fmt"
@@ -17,8 +18,11 @@ func main() {
 
 	repositoryInstance := repository.InitRepository()
 	serverInstance := server.InitServer()
+	logService := log.InitService()
 
+	serverInstance.SetLogService(logService)
 	serverInstance.SetRepository(repositoryInstance)
+	repositoryInstance.SetLogService(logService)
 
 	repositoryInstance.Start()
 	serverInstance.Start()

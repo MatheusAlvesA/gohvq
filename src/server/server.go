@@ -1,6 +1,7 @@
 package server
 
 import (
+	"MatheusAlvesA/gohvq/src/log"
 	"MatheusAlvesA/gohvq/src/repository"
 	"context"
 	"encoding/json/v2"
@@ -12,6 +13,7 @@ import (
 type Server struct {
 	Server *http.Server
 	repo   *repository.Repository
+	log    *log.LogService
 }
 
 func handleEnter(s *Server, w http.ResponseWriter, _ *http.Request) {
@@ -164,11 +166,19 @@ func handleAdminGetFinished(s *Server, w http.ResponseWriter, r *http.Request) {
 	json.MarshalWrite(w, map[string]any{"key": item.Key, "createdAt": item.CreatedAt})
 }
 
+func (s *Server) Log(logType string, message string) {
+	if s.log == nil {
+		return
+	}
+	s.log.PrintLn(logType, "SERVER", message)
+}
+
 func (s *Server) Start() {
 	go func() {
+		s.Log(log.Info, "Starting on "+s.Server.Addr)
 		err := s.Server.ListenAndServe()
 		if err != nil {
-			// TODOlogs
+			s.Log(log.Error, err.Error())
 		}
 	}()
 }
@@ -177,12 +187,15 @@ func (s *Server) Stop() {
 	defer cancel()
 
 	if err := s.Server.Shutdown(ctx); err != nil {
-		//TODO: Log
+		s.Log(log.Error, err.Error())
 	}
 }
 
 func (s *Server) SetRepository(repo *repository.Repository) {
 	s.repo = repo
+}
+func (s *Server) SetLogService(logService *log.LogService) {
+	s.log = logService
 }
 
 func InitServer() *Server {
@@ -214,6 +227,13 @@ func InitServer() *Server {
 	})
 	mux.HandleFunc("DELETE /admin/clearQueue", func(w http.ResponseWriter, r *http.Request) {
 		handleAdminClearQueue(s, w, r)
+	})
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Header().Set("Content-Type", "application/json")
+		json.MarshalWrite(w, map[string]string{"error": "Invalid route for Go Human Virtual Queue"})
+		s.Log(log.Warning, "Invalid route hit: "+r.URL.Path)
 	})
 
 	return s

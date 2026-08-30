@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"MatheusAlvesA/gohvq/src/log"
 	"crypto/rand"
 	"math/big"
 	"sync"
@@ -19,6 +20,7 @@ type Repository struct {
 	FinishedMap map[string]*QueueItem
 	lastClear   int64
 	stopSignal  bool
+	log         *log.LogService
 	wg          sync.WaitGroup
 	mu          sync.RWMutex
 	muFinished  sync.RWMutex
@@ -194,13 +196,25 @@ func (r *Repository) doClear() {
 	}
 }
 
+func (r *Repository) Log(logType string, message string) {
+	if r.log == nil {
+		return
+	}
+	r.log.PrintLn(logType, "REPOSITORY", message)
+}
+func (s *Repository) SetLogService(logService *log.LogService) {
+	s.log = logService
+}
+
 func (r *Repository) Start() {
 	r.wg.Add(1)
 	go r.clearTask()
+	r.Log(log.Info, "Started")
 }
 func (r *Repository) Stop() {
 	r.stopSignal = true
 	r.wg.Wait()
+	r.Log(log.Info, "Stopped")
 }
 
 func InitRepository() *Repository {
