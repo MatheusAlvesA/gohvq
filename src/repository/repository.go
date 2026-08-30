@@ -26,7 +26,7 @@ type Repository struct {
 	muFinished  sync.RWMutex
 }
 
-func generateRandomKey() (string, error) {
+func GenerateRandomKey() (string, error) {
 	result := make([]byte, KEY_SIZE)
 	for i := range result {
 		num, err := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
@@ -59,7 +59,7 @@ func (r *Repository) CreateItem() (*QueueItem, error) {
 	defer r.mu.Unlock()
 	selectedKey := ""
 	for selectedKey == "" || r.ItemMap[selectedKey] != nil {
-		newKey, err := generateRandomKey()
+		newKey, err := GenerateRandomKey()
 		if err != nil {
 			return nil, err
 		}
@@ -84,12 +84,14 @@ func (r *Repository) ClearQueue() {
 	defer r.mu.Unlock()
 	r.Head = &QueueHead{}
 	r.ItemMap = map[string]*QueueItem{}
+	r.Log(log.Warning, "Queue cleared")
 }
 
 func (r *Repository) ClearFinished() {
 	r.muFinished.Lock()
 	defer r.muFinished.Unlock()
 	r.FinishedMap = map[string]*QueueItem{}
+	r.Log(log.Warning, "Finished items cleared")
 }
 
 func (r *Repository) FinishItems(n uint) []*QueueItem {
@@ -180,6 +182,7 @@ func (r *Repository) doClear() {
 		currentItem.Position = currentPosition
 		select {
 		case <-timeout.C:
+			r.Log(log.Error, "Cloud not fully clean the queue in time")
 			return
 		default:
 			elapsedTimeSeconds := now - currentItem.LastPing.Load()

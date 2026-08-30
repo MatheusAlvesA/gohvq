@@ -6,7 +6,7 @@ import (
 )
 
 func TestGenerateRandomKey(t *testing.T) {
-	generated, err := generateRandomKey()
+	generated, err := GenerateRandomKey()
 	if err != nil {
 		t.Errorf("Error generating key %q", err)
 	}
@@ -21,7 +21,7 @@ func TestGenerateRandomKey(t *testing.T) {
 func TestGenerateRandomKeyUniqueness(t *testing.T) {
 	keys := map[string]bool{}
 	for range 1000 {
-		generated, err := generateRandomKey()
+		generated, err := GenerateRandomKey()
 		if err != nil {
 			t.Fatalf("Error generating key %q", err)
 		}
@@ -42,7 +42,7 @@ func TestIsValidKey(t *testing.T) {
 		"",
 		"short",
 		"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ab!", // invalid char
-		"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789a",  // too short
+		"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789a",   // too short
 		"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abc", // too long
 	}
 	for _, key := range invalidCases {
@@ -275,7 +275,7 @@ func TestStartStop(t *testing.T) {
 
 func BenchmarkGenerateRandomKey(b *testing.B) {
 	for b.Loop() {
-		_, err := generateRandomKey()
+		_, err := GenerateRandomKey()
 		if err != nil {
 			b.Fatalf("Error generating key %q", err)
 		}

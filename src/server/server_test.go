@@ -149,9 +149,11 @@ func TestHandlePositionNotFound(t *testing.T) {
 
 func TestHandlePositionFinishedItem(t *testing.T) {
 	s := newTestServer()
+	s.SetAdminAcessToken("admin_testing_token")
 	key := newValidKey(t, s)
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/finishItems", nil)
+	req.Header.Set("authorization", "admin_testing_token")
 	rec := httptest.NewRecorder()
 	s.Server.Handler.ServeHTTP(rec, req)
 
@@ -173,11 +175,13 @@ func TestHandlePositionFinishedItem(t *testing.T) {
 
 func TestHandleAdminFinish(t *testing.T) {
 	s := newTestServer()
+	s.SetAdminAcessToken("admin_testing_token")
 	key1 := newValidKey(t, s)
 	key2 := newValidKey(t, s)
 	newValidKey(t, s)
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/finishItems?n=2", nil)
+	req.Header.Set("authorization", "admin_testing_token")
 	rec := httptest.NewRecorder()
 	s.Server.Handler.ServeHTTP(rec, req)
 
@@ -198,12 +202,14 @@ func TestHandleAdminFinish(t *testing.T) {
 
 func TestHandleAdminFinishDefault(t *testing.T) {
 	s := newTestServer()
+	s.SetAdminAcessToken("admin_testing_token")
 	newValidKey(t, s)
 	newValidKey(t, s)
 
 	for _, url := range []string{"/admin/finishItems", "/admin/finishItems?n=abc", "/admin/finishItems?n=-1"} {
 		newValidKey(t, s)
 		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("authorization", "admin_testing_token")
 		rec := httptest.NewRecorder()
 		s.Server.Handler.ServeHTTP(rec, req)
 
@@ -219,13 +225,16 @@ func TestHandleAdminFinishDefault(t *testing.T) {
 
 func TestHandleAdminGetFinished(t *testing.T) {
 	s := newTestServer()
+	s.SetAdminAcessToken("admin_testing_token")
 	key := newValidKey(t, s)
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/finishItems", nil)
+	req.Header.Set("authorization", "admin_testing_token")
 	rec := httptest.NewRecorder()
 	s.Server.Handler.ServeHTTP(rec, req)
 
 	req = httptest.NewRequest(http.MethodGet, "/admin/finishedItem/"+key, nil)
+	req.Header.Set("authorization", "admin_testing_token")
 	rec = httptest.NewRecorder()
 	s.Server.Handler.ServeHTTP(rec, req)
 
@@ -243,9 +252,11 @@ func TestHandleAdminGetFinished(t *testing.T) {
 
 func TestHandleAdminGetFinishedNotFound(t *testing.T) {
 	s := newTestServer()
+	s.SetAdminAcessToken("admin_testing_token")
 	unknownKey := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ab"
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/finishedItem/"+unknownKey, nil)
+	req.Header.Set("authorization", "admin_testing_token")
 	rec := httptest.NewRecorder()
 	s.Server.Handler.ServeHTTP(rec, req)
 
@@ -254,6 +265,7 @@ func TestHandleAdminGetFinishedNotFound(t *testing.T) {
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/admin/finishedItem/invalid", nil)
+	req.Header.Set("authorization", "admin_testing_token")
 	rec = httptest.NewRecorder()
 	s.Server.Handler.ServeHTTP(rec, req)
 
@@ -264,13 +276,16 @@ func TestHandleAdminGetFinishedNotFound(t *testing.T) {
 
 func TestHandleAdminDeleteFinished(t *testing.T) {
 	s := newTestServer()
+	s.SetAdminAcessToken("admin_testing_token")
 	key := newValidKey(t, s)
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/finishItems", nil)
+	req.Header.Set("authorization", "admin_testing_token")
 	rec := httptest.NewRecorder()
 	s.Server.Handler.ServeHTTP(rec, req)
 
 	req = httptest.NewRequest(http.MethodDelete, "/admin/finishedItem/"+key, nil)
+	req.Header.Set("authorization", "admin_testing_token")
 	rec = httptest.NewRecorder()
 	s.Server.Handler.ServeHTTP(rec, req)
 
@@ -279,6 +294,7 @@ func TestHandleAdminDeleteFinished(t *testing.T) {
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/admin/finishedItem/"+key, nil)
+	req.Header.Set("authorization", "admin_testing_token")
 	rec = httptest.NewRecorder()
 	s.Server.Handler.ServeHTTP(rec, req)
 
@@ -287,6 +303,7 @@ func TestHandleAdminDeleteFinished(t *testing.T) {
 	}
 
 	req = httptest.NewRequest(http.MethodDelete, "/admin/finishedItem/invalid", nil)
+	req.Header.Set("authorization", "admin_testing_token")
 	rec = httptest.NewRecorder()
 	s.Server.Handler.ServeHTTP(rec, req)
 
@@ -297,13 +314,16 @@ func TestHandleAdminDeleteFinished(t *testing.T) {
 
 func TestHandleAdminClearFinished(t *testing.T) {
 	s := newTestServer()
+	s.SetAdminAcessToken("admin_testing_token")
 	key := newValidKey(t, s)
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/finishItems", nil)
+	req.Header.Set("authorization", "admin_testing_token")
 	rec := httptest.NewRecorder()
 	s.Server.Handler.ServeHTTP(rec, req)
 
 	req = httptest.NewRequest(http.MethodDelete, "/admin/clearFinished", nil)
+	req.Header.Set("authorization", "admin_testing_token")
 	rec = httptest.NewRecorder()
 	s.Server.Handler.ServeHTTP(rec, req)
 
@@ -312,6 +332,7 @@ func TestHandleAdminClearFinished(t *testing.T) {
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/admin/finishedItem/"+key, nil)
+	req.Header.Set("authorization", "admin_testing_token")
 	rec = httptest.NewRecorder()
 	s.Server.Handler.ServeHTTP(rec, req)
 
@@ -322,9 +343,11 @@ func TestHandleAdminClearFinished(t *testing.T) {
 
 func TestHandleAdminClearQueue(t *testing.T) {
 	s := newTestServer()
+	s.SetAdminAcessToken("admin_testing_token")
 	key := newValidKey(t, s)
 
 	req := httptest.NewRequest(http.MethodDelete, "/admin/clearQueue", nil)
+	req.Header.Set("authorization", "admin_testing_token")
 	rec := httptest.NewRecorder()
 	s.Server.Handler.ServeHTTP(rec, req)
 
@@ -333,6 +356,7 @@ func TestHandleAdminClearQueue(t *testing.T) {
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/position?key="+key, nil)
+	req.Header.Set("authorization", "admin_testing_token")
 	rec = httptest.NewRecorder()
 	s.Server.Handler.ServeHTTP(rec, req)
 
@@ -368,8 +392,11 @@ func BenchmarkHandlePosition(b *testing.B) {
 
 func BenchmarkHandleAdminFinish(b *testing.B) {
 	s := newTestServer()
+	s.SetAdminAcessToken("admin_testing_token")
 	reqEnter := httptest.NewRequest(http.MethodPost, "/enter", nil)
+	reqEnter.Header.Set("authorization", "admin_testing_token")
 	reqFinish := httptest.NewRequest(http.MethodGet, "/admin/finishItems", nil)
+	reqEnter.Header.Set("authorization", "admin_testing_token")
 
 	for b.Loop() {
 		s.Server.Handler.ServeHTTP(httptest.NewRecorder(), reqEnter)

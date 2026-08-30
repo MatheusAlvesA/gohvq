@@ -4,6 +4,8 @@ import (
 	"MatheusAlvesA/gohvq/src/log"
 	"MatheusAlvesA/gohvq/src/repository"
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/json/v2"
 	"net/http"
 	"strconv"
@@ -11,9 +13,31 @@ import (
 )
 
 type Server struct {
-	Server *http.Server
-	repo   *repository.Repository
-	log    *log.LogService
+	Server   *http.Server
+	repo     *repository.Repository
+	log      *log.LogService
+	accessTk string
+}
+
+func (s *Server) CheckAdminToken(token string) bool {
+	if len(s.accessTk) < 10 {
+		return false
+	}
+	// Cria o hash de tamanho fixo (32 bytes) para ambos os tokens
+	hashA := sha256.Sum256([]byte(s.accessTk))
+	hashB := sha256.Sum256([]byte(token))
+
+	// Como o tamanho agora é sempre idêntico, a comparação é segura contra timing attacks
+	return subtle.ConstantTimeCompare(hashA[:], hashB[:]) == 1
+}
+
+func (s *Server) SetAdminAcessToken(token string) bool {
+	if len(token) < 10 {
+		s.Log(log.Error, "Invalid new admin access token, have to be at least 10 chars")
+		return false
+	}
+	s.accessTk = token
+	return true
 }
 
 func handleEnter(s *Server, w http.ResponseWriter, _ *http.Request) {
@@ -73,6 +97,12 @@ func handleAdminFinish(s *Server, w http.ResponseWriter, r *http.Request) {
 		json.MarshalWrite(w, map[string]string{"message": "Repository not set"})
 		return
 	}
+	headerTk := r.Header.Get("authorization")
+	if !s.CheckAdminToken(headerTk) {
+		w.WriteHeader(http.StatusForbidden)
+		json.MarshalWrite(w, map[string]string{"message": "Access Denied"})
+		return
+	}
 	var nItems uint = 1
 	nParam, err := strconv.Atoi(r.URL.Query().Get("n"))
 	if err == nil && nParam > 0 {
@@ -100,6 +130,12 @@ func handleAdminDeleteFinished(s *Server, w http.ResponseWriter, r *http.Request
 		json.MarshalWrite(w, map[string]string{"message": "Repository not set"})
 		return
 	}
+	headerTk := r.Header.Get("authorization")
+	if !s.CheckAdminToken(headerTk) {
+		w.WriteHeader(http.StatusForbidden)
+		json.MarshalWrite(w, map[string]string{"message": "Access Denied"})
+		return
+	}
 
 	key := r.PathValue("key")
 	if !repository.IsValidKey(key) {
@@ -114,11 +150,17 @@ func handleAdminDeleteFinished(s *Server, w http.ResponseWriter, r *http.Request
 	json.MarshalWrite(w, map[string]any{"key": key})
 }
 
-func handleAdminClearFinished(s *Server, w http.ResponseWriter, _ *http.Request) {
+func handleAdminClearFinished(s *Server, w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if s.repo == nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.MarshalWrite(w, map[string]string{"message": "Repository not set"})
+		return
+	}
+	headerTk := r.Header.Get("authorization")
+	if !s.CheckAdminToken(headerTk) {
+		w.WriteHeader(http.StatusForbidden)
+		json.MarshalWrite(w, map[string]string{"message": "Access Denied"})
 		return
 	}
 	s.repo.ClearFinished()
@@ -127,11 +169,17 @@ func handleAdminClearFinished(s *Server, w http.ResponseWriter, _ *http.Request)
 	json.MarshalWrite(w, map[string]string{"status": "ok"})
 }
 
-func handleAdminClearQueue(s *Server, w http.ResponseWriter, _ *http.Request) {
+func handleAdminClearQueue(s *Server, w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if s.repo == nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.MarshalWrite(w, map[string]string{"message": "Repository not set"})
+		return
+	}
+	headerTk := r.Header.Get("authorization")
+	if !s.CheckAdminToken(headerTk) {
+		w.WriteHeader(http.StatusForbidden)
+		json.MarshalWrite(w, map[string]string{"message": "Access Denied"})
 		return
 	}
 	s.repo.ClearQueue()
@@ -145,6 +193,12 @@ func handleAdminGetFinished(s *Server, w http.ResponseWriter, r *http.Request) {
 	if s.repo == nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.MarshalWrite(w, map[string]string{"message": "Repository not set"})
+		return
+	}
+	headerTk := r.Header.Get("authorization")
+	if !s.CheckAdminToken(headerTk) {
+		w.WriteHeader(http.StatusForbidden)
+		json.MarshalWrite(w, map[string]string{"message": "Access Denied"})
 		return
 	}
 
@@ -174,6 +228,16 @@ func (s *Server) Log(logType string, message string) {
 }
 
 func (s *Server) Start() {
+	if s.accessTk == "" {
+		tk, err := repository.GenerateRandomKey()
+		if err != nil {
+			s.Log(log.Error, "Fail to generate secure initial admin access token")
+		} else {
+			s.accessTk = tk
+			s.Log(log.Warning, "Initial admin access token: "+s.accessTk)
+		}
+	}
+
 	go func() {
 		s.Log(log.Info, "Starting on "+s.Server.Addr)
 		err := s.Server.ListenAndServe()
