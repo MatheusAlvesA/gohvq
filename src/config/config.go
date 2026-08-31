@@ -4,21 +4,23 @@ import (
 	"MatheusAlvesA/gohvq/src/log"
 	"MatheusAlvesA/gohvq/src/repository"
 	"MatheusAlvesA/gohvq/src/server"
+	"encoding/json/v2"
 	"fmt"
+	"os"
 )
 
 type ConfigService struct {
-	LocalhostOnly bool
-	ServerPort    uint32
-	AdminToken    string
+	LocalhostOnly bool   `json:"localHostOnly"`
+	ServerPort    uint32 `json:"serverPort"`
+	AdminToken    string `json:"adminToken"`
 
-	QueueClearMaxSeconds uint
-	QueuePingTimeout     uint
-	QueueClearFreq       uint
+	QueueClearMaxSeconds uint `json:"clearMaxSeconds,omitempty"`
+	QueuePingTimeout     uint `json:"pingTimeout,omitempty"`
+	QueueClearFreq       uint `json:"clearFrequency,omitempty"`
 
-	srv *server.Server
-	rep *repository.Repository
-	log *log.LogService
+	srv *server.Server         `json:"-"`
+	rep *repository.Repository `json:"-"`
+	log *log.LogService        `json:"-"`
 }
 
 func (c *ConfigService) applyInitialToServer() {
@@ -43,13 +45,13 @@ func (c *ConfigService) SetServices(srv *server.Server, repo *repository.Reposit
 }
 
 func (c *ConfigService) Start() {
+	c.loadConfig()
 	if c.srv != nil {
 		c.applyInitialToServer()
 	}
 	if c.rep != nil {
 		c.applyInitialToRepository()
 	}
-	c.Log(log.Warning, "Generated admin token: "+c.AdminToken)
 }
 
 func (r *ConfigService) Log(logType string, message string) {
@@ -57,6 +59,33 @@ func (r *ConfigService) Log(logType string, message string) {
 		return
 	}
 	r.log.PrintLn(logType, "CONFIG", message)
+}
+
+func (r *ConfigService) readConfigFile() []byte {
+	fileBytes, err := os.ReadFile("gohvq_config.json")
+	if err != nil {
+		r.Log(log.Error, fmt.Sprintf("Failed to read config file: %s", err))
+		return []byte{}
+	}
+	return fileBytes
+}
+func (c *ConfigService) loadConfig() {
+	bytes := c.readConfigFile()
+	if len(bytes) <= 1 {
+		c.Log(log.Warning, "Using default config")
+		c.Log(log.Warning, "Generated admin token: "+c.AdminToken)
+		return
+	}
+
+	oldTk := c.AdminToken
+	err := json.Unmarshal(bytes, c)
+	if err != nil {
+		c.Log(log.Error, fmt.Sprintf("Failed to unmarshal config JSON: %s", err))
+		c.Log(log.Warning, "Using default config")
+	}
+	if oldTk == c.AdminToken {
+		c.Log(log.Warning, "Generated admin token: "+c.AdminToken)
+	}
 }
 
 func InitService() *ConfigService {
