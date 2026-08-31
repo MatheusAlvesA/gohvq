@@ -232,8 +232,8 @@ func TestDoClear(t *testing.T) {
 	alive, _ := repo.CreateItem()
 	expired2, _ := repo.CreateItem()
 
-	expired.LastPing.Store(time.Now().Unix() - PING_TIMEOUT - 1)
-	expired2.LastPing.Store(time.Now().Unix() - PING_TIMEOUT - 1)
+	expired.LastPing.Store(time.Now().Unix() - int64(repo.PingTimeout) - 1)
+	expired2.LastPing.Store(time.Now().Unix() - int64(repo.PingTimeout) - 1)
 
 	repo.doClear()
 
