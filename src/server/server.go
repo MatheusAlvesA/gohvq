@@ -16,15 +16,15 @@ type Server struct {
 	Server   *http.Server
 	repo     *repository.Repository
 	log      *log.LogService
-	accessTk string
+	AccessTk string
 }
 
 func (s *Server) CheckAdminToken(token string) bool {
-	if len(s.accessTk) < 10 {
+	if len(s.AccessTk) < 10 {
 		return false
 	}
 	// Cria o hash de tamanho fixo (32 bytes) para ambos os tokens
-	hashA := sha256.Sum256([]byte(s.accessTk))
+	hashA := sha256.Sum256([]byte(s.AccessTk))
 	hashB := sha256.Sum256([]byte(token))
 
 	// Como o tamanho agora é sempre idêntico, a comparação é segura contra timing attacks
@@ -36,7 +36,7 @@ func (s *Server) SetAdminAcessToken(token string) bool {
 		s.Log(log.Error, "Invalid new admin access token, have to be at least 10 chars")
 		return false
 	}
-	s.accessTk = token
+	s.AccessTk = token
 	return true
 }
 
@@ -228,13 +228,13 @@ func (s *Server) Log(logType string, message string) {
 }
 
 func (s *Server) Start() {
-	if s.accessTk == "" {
+	if s.AccessTk == "" {
 		tk, err := repository.GenerateRandomKey()
 		if err != nil {
 			s.Log(log.Error, "Fail to generate secure initial admin access token")
 		} else {
-			s.accessTk = tk
-			s.Log(log.Warning, "Initial admin access token: "+s.accessTk)
+			s.AccessTk = tk
+			s.Log(log.Warning, "Initial admin access token: "+s.AccessTk)
 		}
 	}
 
