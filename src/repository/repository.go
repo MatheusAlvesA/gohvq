@@ -9,21 +9,23 @@ import (
 )
 
 const KEY_SIZE uint = 64
-const PING_TIMEOUT int64 = 60
-const MIN_PING_TIMEOUT int64 = 10
-const CLEAR_MAX_TIME uint = 1
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 type Repository struct {
 	Head        *QueueHead
 	ItemMap     map[string]*QueueItem
 	FinishedMap map[string]*QueueItem
-	lastClear   int64
-	stopSignal  bool
-	log         *log.LogService
-	wg          sync.WaitGroup
-	mu          sync.RWMutex
-	muFinished  sync.RWMutex
+
+	PingTimeout    uint
+	ClearFrequency uint
+	ClearMaxTime   uint
+
+	lastClear  int64
+	stopSignal bool
+	log        *log.LogService
+	wg         sync.WaitGroup
+	mu         sync.RWMutex
+	muFinished sync.RWMutex
 }
 
 func GenerateRandomKey() (string, error) {
@@ -164,7 +166,7 @@ func (r *Repository) clearTask() {
 			return
 		}
 		now := time.Now().Unix()
-		if (now - r.lastClear) < min(PING_TIMEOUT, MIN_PING_TIMEOUT) {
+		if (now - r.lastClear) < int64(r.ClearFrequency) {
 			continue
 		}
 		r.doClear()
@@ -176,7 +178,7 @@ func (r *Repository) doClear() {
 	now := time.Now().Unix()
 
 	currentItem := r.Head.FirstItem
-	timeout := time.NewTimer(time.Duration(CLEAR_MAX_TIME) * time.Second)
+	timeout := time.NewTimer(time.Duration(r.ClearMaxTime) * time.Second)
 	var currentPosition uint64 = 0
 	for currentItem != nil {
 		currentItem.Position = currentPosition
@@ -186,7 +188,7 @@ func (r *Repository) doClear() {
 			return
 		default:
 			elapsedTimeSeconds := now - currentItem.LastPing.Load()
-			if elapsedTimeSeconds <= PING_TIMEOUT {
+			if elapsedTimeSeconds <= int64(r.PingTimeout) {
 				currentItem = currentItem.Next
 				currentPosition++
 				continue
@@ -225,5 +227,9 @@ func InitRepository() *Repository {
 		Head:        &QueueHead{},
 		ItemMap:     map[string]*QueueItem{},
 		FinishedMap: map[string]*QueueItem{},
+
+		ClearFrequency: 10,
+		PingTimeout:    60,
+		ClearMaxTime:   1,
 	}
 }
