@@ -14,13 +14,16 @@ type ConfigService struct {
 	ServerPort    uint32 `json:"serverPort"`
 	AdminToken    string `json:"adminToken"`
 
+	PersistenceEnabled bool `json:"persistenceEnabled,omitempty"`
+
 	QueueClearMaxSeconds uint `json:"clearMaxSeconds,omitempty"`
 	QueuePingTimeout     uint `json:"pingTimeout,omitempty"`
 	QueueClearFreq       uint `json:"clearFrequency,omitempty"`
 
-	srv *server.Server         `json:"-"`
-	rep *repository.Repository `json:"-"`
-	log *log.LogService        `json:"-"`
+	srv *server.Server          `json:"-"`
+	rep *repository.Repository  `json:"-"`
+	log *log.LogService         `json:"-"`
+	pst *repository.Persistence `json:"-"`
 }
 
 func (c *ConfigService) applyInitialToServer() {
@@ -38,10 +41,20 @@ func (c *ConfigService) applyInitialToRepository() {
 	c.rep.PingTimeout = c.QueuePingTimeout
 }
 
-func (c *ConfigService) SetServices(srv *server.Server, repo *repository.Repository, log *log.LogService) {
+func (c *ConfigService) applyInitialToPersistence() {
+	c.pst.Enabled = c.PersistenceEnabled
+}
+
+func (c *ConfigService) SetServices(
+	srv *server.Server,
+	repo *repository.Repository,
+	log *log.LogService,
+	pst *repository.Persistence,
+) {
 	c.srv = srv
 	c.rep = repo
 	c.log = log
+	c.pst = pst
 }
 
 func (c *ConfigService) Start() {
@@ -51,6 +64,9 @@ func (c *ConfigService) Start() {
 	}
 	if c.rep != nil {
 		c.applyInitialToRepository()
+	}
+	if c.pst != nil {
+		c.applyInitialToPersistence()
 	}
 }
 
@@ -98,6 +114,8 @@ func InitService() *ConfigService {
 		LocalhostOnly: false,
 		ServerPort:    4242,
 		AdminToken:    key,
+
+		PersistenceEnabled: true,
 
 		QueueClearMaxSeconds: 1,
 		QueuePingTimeout:     60,

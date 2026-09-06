@@ -15,6 +15,7 @@ type Repository struct {
 	Head        *QueueHead
 	ItemMap     map[string]*QueueItem
 	FinishedMap map[string]*QueueItem
+	Persistence *Persistence
 
 	PingTimeout    uint
 	ClearFrequency uint
@@ -227,6 +228,11 @@ func InitRepository() *Repository {
 		Head:        &QueueHead{},
 		ItemMap:     map[string]*QueueItem{},
 		FinishedMap: map[string]*QueueItem{},
+
+		Persistence: &Persistence{
+			ItemMap: map[string]*QueueItem{},
+			Enabled: false,
+		},
 
 		ClearFrequency: 10,
 		PingTimeout:    60,

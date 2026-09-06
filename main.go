@@ -18,17 +18,24 @@ func main() {
 	signal.Notify(shutdownCall, syscall.SIGTERM, syscall.SIGINT)
 
 	repositoryInstance := repository.InitRepository()
+	persistenceInstance := repository.InitPersistence()
 	serverInstance := server.InitServer()
 	logService := log.InitService()
 	config := config.InitService()
 
+	persistenceInstance.SetLogService(logService)
 	serverInstance.SetLogService(logService)
 	serverInstance.SetRepository(repositoryInstance)
 	repositoryInstance.SetLogService(logService)
-	config.SetServices(serverInstance, repositoryInstance, logService)
+	config.SetServices(
+		serverInstance,
+		repositoryInstance,
+		logService,
+		persistenceInstance)
 
 	config.Start()
 	repositoryInstance.Start()
+	persistenceInstance.Start(repositoryInstance)
 	serverInstance.Start()
 
 	<-shutdownCall
@@ -36,4 +43,5 @@ func main() {
 	fmt.Println("Shutting Down...")
 	serverInstance.Stop()
 	repositoryInstance.Stop()
+	persistenceInstance.Stop()
 }
