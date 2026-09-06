@@ -43,6 +43,7 @@ func (c *ConfigService) applyInitialToRepository() {
 
 func (c *ConfigService) applyInitialToPersistence() {
 	c.pst.Enabled = c.PersistenceEnabled
+	c.rep.Persistence = c.pst
 }
 
 func (c *ConfigService) SetServices(

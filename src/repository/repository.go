@@ -75,6 +75,8 @@ func (r *Repository) CreateItem() (*QueueItem, error) {
 	newItem.LastPing.Store(time.Now().Unix())
 	r.Head.AddItem(newItem)
 	r.ItemMap[selectedKey] = newItem
+
+	r.Persistence.AddItem(selectedKey)
 	return newItem, nil
 }
 
@@ -88,6 +90,7 @@ func (r *Repository) ClearQueue() {
 	r.Head = &QueueHead{}
 	r.ItemMap = map[string]*QueueItem{}
 	r.Log(log.Warning, "Queue cleared")
+	r.Persistence.ClearAllNotFinished()
 }
 
 func (r *Repository) ClearFinished() {
@@ -95,6 +98,7 @@ func (r *Repository) ClearFinished() {
 	defer r.muFinished.Unlock()
 	r.FinishedMap = map[string]*QueueItem{}
 	r.Log(log.Warning, "Finished items cleared")
+	r.Persistence.ClearAllFinished()
 }
 
 func (r *Repository) FinishItems(n uint) []*QueueItem {
@@ -116,6 +120,7 @@ func (r *Repository) FinishItems(n uint) []*QueueItem {
 		delete(r.ItemMap, current.Key)
 		r.FinishedMap[current.Key] = current
 		resultList = append(resultList, current)
+		r.Persistence.FinishItem(current.Key)
 		n--
 		if n <= 0 {
 			break
@@ -140,6 +145,7 @@ func (r *Repository) DeleteFinished(key string) *QueueItem {
 	item := r.FinishedMap[key]
 	if item != nil {
 		delete(r.FinishedMap, key)
+		r.Persistence.RemoveItem(key)
 	}
 	return item
 }
@@ -197,6 +203,7 @@ func (r *Repository) doClear() {
 			tmpNext := currentItem.Next
 			r.Head.Detach(currentItem)
 			delete(r.ItemMap, currentItem.Key)
+			r.Persistence.RemoveItem(currentItem.Key)
 			currentItem = tmpNext
 		}
 	}
@@ -230,7 +237,7 @@ func InitRepository() *Repository {
 		FinishedMap: map[string]*QueueItem{},
 
 		Persistence: &Persistence{
-			ItemMap: map[string]*QueueItem{},
+			ItemMap: map[string]*PersistenceItem{},
 			Enabled: false,
 		},
 

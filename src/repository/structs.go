@@ -2,6 +2,12 @@ package repository
 
 import "sync/atomic"
 
+const (
+	PersistenceAdd    = 1
+	PersistenceRemove = 2
+	PersistanceFinish = 3
+)
+
 type QueueHead struct {
 	FirstItem *QueueItem
 	LastItem  *QueueItem
@@ -16,6 +22,17 @@ type QueueItem struct {
 	FinishedAt int64
 	Next       *QueueItem
 	Previus    *QueueItem
+}
+
+type PersistanceAction struct {
+	ActionType int
+	Key        string
+}
+
+type PersistenceItem struct {
+	Key      string
+	Index    uint64
+	Finished bool
 }
 
 func (h *QueueHead) AddItem(item *QueueItem) {
