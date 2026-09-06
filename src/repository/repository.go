@@ -80,6 +80,28 @@ func (r *Repository) CreateItem() (*QueueItem, error) {
 	return newItem, nil
 }
 
+func (r *Repository) RegenerateQueueItem(key string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	newItem := new(QueueItem)
+	newItem.Key = key
+	newItem.CreatedAt = time.Now().Unix()
+	newItem.LastPing.Store(time.Now().Unix())
+	r.Head.AddItem(newItem)
+	r.ItemMap[key] = newItem
+}
+func (r *Repository) RegenerateFinishedItem(key string) {
+	r.muFinished.Lock()
+	defer r.muFinished.Unlock()
+	newItem := new(QueueItem)
+	newItem.Key = key
+	newItem.CreatedAt = time.Now().Unix()
+	newItem.LastPing.Store(newItem.CreatedAt)
+	newItem.FinishedAt = newItem.CreatedAt
+
+	r.FinishedMap[key] = newItem
+}
+
 func (r *Repository) GetCurrentQueueSize() uint64 {
 	return r.Head.Length.Load()
 }

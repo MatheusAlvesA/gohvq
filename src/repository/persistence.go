@@ -87,7 +87,7 @@ func (p *Persistence) finishFromFile(key string) {
 	}
 }
 
-func (p *Persistence) optimizeDataBase() {
+func (p *Persistence) optimizeDataBase(repo *Repository) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 	if p.dbFile == nil {
@@ -130,6 +130,13 @@ func (p *Persistence) optimizeDataBase() {
 			Index:    newCounter,
 			Finished: isFinished,
 		}
+		if repo != nil {
+			if isFinished {
+				repo.RegenerateFinishedItem(key)
+			} else {
+				repo.RegenerateQueueItem(key)
+			}
+		}
 		newCounter++
 	}
 
@@ -164,7 +171,7 @@ func (p *Persistence) optimizationTask() {
 		if (now - p.lastOptimization) < int64(3*60) { // 3 minutes
 			continue
 		}
-		p.optimizeDataBase()
+		p.optimizeDataBase(nil)
 		p.lastOptimization = now
 	}
 }
@@ -196,16 +203,20 @@ func (p *Persistence) actionsConsumer() {
 			}
 			p.mutex.Unlock()
 		default:
+			p.mutex.Lock()
 			if p.stopSignal {
 				p.wg.Done()
+				p.mutex.Unlock()
 				return
 			}
 			if p.dbFile == nil {
 				p.wg.Done()
 				p.Log(log.Error, "Persistence file is not open, stopping actions consumer and disabling persistence")
 				p.Enabled = false
+				p.mutex.Unlock()
 				return
 			}
+			p.mutex.Unlock()
 			time.Sleep(100 * time.Millisecond)
 		}
 	}
@@ -225,6 +236,7 @@ func (p *Persistence) Start(repo *Repository) {
 	p.wg.Add(1)
 	go p.optimizationTask()
 	p.Log(log.Info, "Started")
+	p.Regenerate(repo)
 }
 func (p *Persistence) Stop() {
 	p.stopSignal = true
@@ -293,7 +305,16 @@ func (p *Persistence) FinishItem(key string) {
 }
 
 func (p *Persistence) Regenerate(repo *Repository) {
-	//TODO
+	if !p.Enabled {
+		return
+	}
+	if p.dbFile == nil {
+		p.Log(log.Error, "Persistence file is not open to regenerate")
+		return
+	}
+	// The optimization also reads the file and rebuilds the ItemMap,
+	// so we can use it to load the data from the file
+	p.optimizeDataBase(repo)
 }
 
 func InitPersistence() *Persistence {
@@ -301,6 +322,7 @@ func InitPersistence() *Persistence {
 		ItemMap: map[string]*PersistenceItem{},
 		Enabled: true,
 
-		actions: make(chan *PersistanceAction, PERSISTENCE_ACTIONS_BUFFER_SIZE),
+		actions:          make(chan *PersistanceAction, PERSISTENCE_ACTIONS_BUFFER_SIZE),
+		lastOptimization: time.Now().Unix(),
 	}
 }
