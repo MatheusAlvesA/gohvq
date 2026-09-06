@@ -44,4 +44,5 @@ func main() {
 	serverInstance.Stop()
 	repositoryInstance.Stop()
 	persistenceInstance.Stop()
+	fmt.Println("Bye!")
 }

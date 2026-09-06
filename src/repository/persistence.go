@@ -2,6 +2,8 @@ package repository
 
 import (
 	"MatheusAlvesA/gohvq/src/log"
+	"errors"
+	"io"
 	"os"
 	"sync"
 	"time"
@@ -17,11 +19,13 @@ type Persistence struct {
 
 	actions chan *PersistanceAction
 
-	counter    uint64
-	stopSignal bool
-	dbFile     *os.File
-	log        *log.LogService
-	wg         sync.WaitGroup
+	counter          uint64
+	stopSignal       bool
+	lastOptimization int64
+	dbFile           *os.File
+	log              *log.LogService
+	wg               sync.WaitGroup
+	mutex            sync.Mutex
 }
 
 func (p *Persistence) Log(logType string, message string) {
@@ -83,10 +87,93 @@ func (p *Persistence) finishFromFile(key string) {
 	}
 }
 
+func (p *Persistence) optimizeDataBase() {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+	if p.dbFile == nil {
+		p.Log(log.Error, "Persistence file is not open to optimize")
+		return
+	}
+	optimizedFile, err := os.Create(PERSISTENCE_DB_FILE + ".tmp")
+	if err != nil {
+		p.Log(log.Error, "Could not create optimized persistence file: "+err.Error())
+		return
+	}
+	defer optimizedFile.Close()
+
+	newItemMap := make(map[string]*PersistenceItem)
+	var newCounter uint64 = 0
+	readedBytes := make([]byte, PERSISTANCE_DB_LINE_SIZE)
+	p.dbFile.Seek(0, io.SeekStart)
+	for {
+		n, err := p.dbFile.Read(readedBytes)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if n != int(PERSISTANCE_DB_LINE_SIZE) {
+			p.Log(log.Error, "Could not read full line from persistence file, readed bytes: "+string(readedBytes[:n]))
+			return
+		}
+		typeByte := readedBytes[0]
+		if typeByte == 'X' {
+			continue
+		}
+		isFinished := typeByte == 'F'
+		key := string(readedBytes[2 : PERSISTANCE_DB_LINE_SIZE-1])
+		_, err = optimizedFile.Write(readedBytes)
+		if err != nil {
+			p.Log(log.Error, "Could not write to optimized persistence file: "+err.Error())
+			return
+		}
+		newItemMap[key] = &PersistenceItem{
+			Key:      key,
+			Index:    newCounter,
+			Finished: isFinished,
+		}
+		newCounter++
+	}
+
+	p.dbFile.Close()
+	p.dbFile = nil
+	err = os.Rename(PERSISTENCE_DB_FILE+".tmp", PERSISTENCE_DB_FILE)
+	if err != nil {
+		p.Log(log.Error, "Could not rename optimized persistence file: "+err.Error())
+	}
+	p.dbFile, err = os.OpenFile(PERSISTENCE_DB_FILE, os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		p.Log(log.Error, "Could not open optimized persistence file: "+err.Error())
+		p.dbFile = nil
+		return
+	}
+	p.dbFile.Seek(0, io.SeekEnd)
+	p.ItemMap = newItemMap
+	p.counter = newCounter
+	p.Log(log.Info, "Persistence database optimized")
+}
+func (p *Persistence) optimizationTask() {
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	defer p.wg.Done()
+
+	for true {
+		<-ticker.C
+		if p.stopSignal {
+			return
+		}
+		now := time.Now().Unix()
+		if (now - p.lastOptimization) < int64(3*60) { // 3 minutes
+			continue
+		}
+		p.optimizeDataBase()
+		p.lastOptimization = now
+	}
+}
+
 func (p *Persistence) actionsConsumer() {
 	for {
 		select {
 		case action := <-p.actions:
+			p.mutex.Lock()
 			switch action.ActionType {
 			case PersistenceAdd:
 				p.ItemMap[action.Key] = &PersistenceItem{
@@ -107,6 +194,7 @@ func (p *Persistence) actionsConsumer() {
 			default:
 				p.Log(log.Error, "Unknown persistence action type")
 			}
+			p.mutex.Unlock()
 		default:
 			if p.stopSignal {
 				p.wg.Done()
@@ -130,9 +218,12 @@ func (p *Persistence) Start(repo *Repository) {
 		return
 	} else {
 		p.dbFile = dbFile
+		p.dbFile.Seek(0, io.SeekEnd)
 	}
 	p.wg.Add(1)
 	go p.actionsConsumer()
+	p.wg.Add(1)
+	go p.optimizationTask()
 	p.Log(log.Info, "Started")
 }
 func (p *Persistence) Stop() {
