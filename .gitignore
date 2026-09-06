@@ -1,3 +1,4 @@
 build/
 coverage.out
 gohvq_config.json
+*.db
