@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"math/big"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -22,7 +23,7 @@ type Repository struct {
 	ClearMaxTime   uint
 
 	lastClear  int64
-	stopSignal bool
+	stopSignal atomic.Bool
 	log        *log.LogService
 	wg         sync.WaitGroup
 	mu         sync.RWMutex
@@ -57,7 +58,7 @@ func IsValidKey(key string) bool {
 	return true
 }
 
-func (r *Repository) CreateItem() (*QueueItem, error) {
+func (r *Repository) CreateItem() (*ItemSnapshot, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	selectedKey := ""
@@ -77,7 +78,7 @@ func (r *Repository) CreateItem() (*QueueItem, error) {
 	r.ItemMap[selectedKey] = newItem
 
 	r.Persistence.AddItem(selectedKey)
-	return newItem, nil
+	return newItem.snapshot(), nil
 }
 
 func (r *Repository) RegenerateQueueItem(key string) {
@@ -109,7 +110,10 @@ func (r *Repository) GetCurrentQueueSize() uint64 {
 func (r *Repository) ClearQueue() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.Head = &QueueHead{}
+	// Keep the head address stable for lock-free size queries.
+	r.Head.FirstItem = nil
+	r.Head.LastItem = nil
+	r.Head.Length.Store(0)
 	r.ItemMap = map[string]*QueueItem{}
 	r.Log(log.Warning, "Queue cleared")
 	r.Persistence.ClearAllNotFinished()
@@ -123,16 +127,16 @@ func (r *Repository) ClearFinished() {
 	r.Persistence.ClearAllFinished()
 }
 
-func (r *Repository) FinishItems(n uint) []*QueueItem {
+func (r *Repository) FinishItems(n uint) []*ItemSnapshot {
 	if n == 0 {
-		return make([]*QueueItem, 0)
+		return make([]*ItemSnapshot, 0)
 	}
 	r.mu.Lock()
 	r.muFinished.Lock()
 	defer r.mu.Unlock()
 	defer r.muFinished.Unlock()
 
-	var resultList []*QueueItem
+	var resultList []*ItemSnapshot
 	current := r.Head.PopItem()
 	now := time.Now().Unix()
 	for current != nil {
@@ -141,7 +145,7 @@ func (r *Repository) FinishItems(n uint) []*QueueItem {
 		current.FinishedAt = now
 		delete(r.ItemMap, current.Key)
 		r.FinishedMap[current.Key] = current
-		resultList = append(resultList, current)
+		resultList = append(resultList, current.snapshot())
 		r.Persistence.FinishItem(current.Key)
 		n--
 		if n <= 0 {
@@ -153,14 +157,14 @@ func (r *Repository) FinishItems(n uint) []*QueueItem {
 	return resultList
 }
 
-func (r *Repository) GetFinished(key string) *QueueItem {
+func (r *Repository) GetFinished(key string) *ItemSnapshot {
 	r.muFinished.RLock()
 	defer r.muFinished.RUnlock()
 
-	return r.FinishedMap[key]
+	return r.FinishedMap[key].snapshot()
 }
 
-func (r *Repository) DeleteFinished(key string) *QueueItem {
+func (r *Repository) DeleteFinished(key string) *ItemSnapshot {
 	r.muFinished.Lock()
 	defer r.muFinished.Unlock()
 
@@ -169,19 +173,19 @@ func (r *Repository) DeleteFinished(key string) *QueueItem {
 		delete(r.FinishedMap, key)
 		r.Persistence.RemoveItem(key)
 	}
-	return item
+	return item.snapshot()
 }
 
-func (r *Repository) GetAndPingItemByKey(key string) *QueueItem {
+func (r *Repository) GetAndPingItemByKey(key string) *ItemSnapshot {
 	r.mu.RLock()
+	defer r.mu.RUnlock()
 	item := r.ItemMap[key]
-	r.mu.RUnlock()
 	if item == nil {
 		return nil
 	}
 
 	item.LastPing.Store(time.Now().Unix())
-	return item
+	return item.snapshot()
 }
 
 func (r *Repository) clearTask() {
@@ -191,23 +195,35 @@ func (r *Repository) clearTask() {
 
 	for true {
 		<-ticker.C
-		if r.stopSignal {
+		if r.stopSignal.Load() {
 			return
 		}
-		now := time.Now().Unix()
-		if (now - r.lastClear) < int64(r.ClearFrequency) {
-			continue
-		}
-		r.doClear()
+		r.clearIfDue()
 	}
 }
+
+func (r *Repository) clearIfDue() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if time.Now().Unix()-r.lastClear >= int64(r.ClearFrequency) {
+		r.doClearLocked()
+	}
+}
+
 func (r *Repository) doClear() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.doClearLocked()
+}
+
+func (r *Repository) doClearLocked() {
+	// Even a scan that exhausts its time budget must respect ClearFrequency.
+	defer func() { r.lastClear = time.Now().Unix() }()
 	now := time.Now().Unix()
 
 	currentItem := r.Head.FirstItem
 	timeout := time.NewTimer(time.Duration(r.ClearMaxTime) * time.Second)
+	defer timeout.Stop()
 	var currentPosition uint64 = 0
 	for currentItem != nil {
 		currentItem.Position = currentPosition
@@ -242,12 +258,13 @@ func (s *Repository) SetLogService(logService *log.LogService) {
 }
 
 func (r *Repository) Start() {
+	r.stopSignal.Store(false)
 	r.wg.Add(1)
 	go r.clearTask()
 	r.Log(log.Info, "Started")
 }
 func (r *Repository) Stop() {
-	r.stopSignal = true
+	r.stopSignal.Store(true)
 	r.wg.Wait()
 	r.Log(log.Info, "Stopped")
 }

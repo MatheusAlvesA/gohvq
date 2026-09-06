@@ -3,9 +3,11 @@ package repository
 import "sync/atomic"
 
 const (
-	PersistenceAdd    = 1
-	PersistenceRemove = 2
-	PersistanceFinish = 3
+	PersistenceAdd           = 1
+	PersistenceRemove        = 2
+	PersistanceFinish        = 3
+	PersistenceClearQueue    = 4
+	PersistenceClearFinished = 5
 )
 
 type QueueHead struct {
@@ -22,6 +24,29 @@ type QueueItem struct {
 	FinishedAt int64
 	Next       *QueueItem
 	Previus    *QueueItem
+}
+
+// ItemSnapshot contains values captured under the repository lock. It does not
+// expose the mutable queue node or copy its atomic fields.
+type ItemSnapshot struct {
+	Key        string
+	CreatedAt  int64
+	LastPing   int64
+	Position   uint64
+	FinishedAt int64
+}
+
+func (i *QueueItem) snapshot() *ItemSnapshot {
+	if i == nil {
+		return nil
+	}
+	return &ItemSnapshot{
+		Key:        i.Key,
+		CreatedAt:  i.CreatedAt,
+		LastPing:   i.LastPing.Load(),
+		Position:   i.Position,
+		FinishedAt: i.FinishedAt,
+	}
 }
 
 type PersistanceAction struct {

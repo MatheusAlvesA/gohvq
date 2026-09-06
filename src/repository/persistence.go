@@ -3,9 +3,12 @@ package repository
 import (
 	"MatheusAlvesA/gohvq/src/log"
 	"errors"
+	"fmt"
 	"io"
+	"math"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -15,232 +18,247 @@ const PERSISTANCE_DB_LINE_SIZE uint64 = uint64(KEY_SIZE) + 3 // "A " + key + "\n
 
 type Persistence struct {
 	ItemMap map[string]*PersistenceItem
+	// Enabled is configuration, set before Start. Runtime availability is kept
+	// separately so producers never race with a worker disabling persistence.
 	Enabled bool
 
-	actions chan *PersistanceAction
+	actions  chan *PersistanceAction
+	stop     chan struct{}
+	done     chan struct{}
+	active   atomic.Bool
+	stopOnce sync.Once
 
-	counter          uint64
-	stopSignal       bool
-	lastOptimization int64
-	dbFile           *os.File
-	log              *log.LogService
-	wg               sync.WaitGroup
-	mutex            sync.Mutex
+	counter uint64
+	dbFile  *os.File
+	log     *log.LogService
+	wg      sync.WaitGroup
+	mutex   sync.Mutex
 }
 
 func (p *Persistence) Log(logType string, message string) {
-	if p.log == nil {
-		return
+	if p.log != nil {
+		p.log.PrintLn(logType, "PERSISTENCE", message)
 	}
-	p.log.PrintLn(logType, "PERSISTENCE", message)
 }
+
 func (p *Persistence) SetLogService(logService *log.LogService) {
 	p.log = logService
 }
 
-func (p *Persistence) addToFile(key string) {
-	if p.dbFile == nil {
-		p.Log(log.Error, "Persistence file is not open")
-		return
-	}
-	bytes := []byte("A " + key + "\n")
-	_, err := p.dbFile.Write(bytes)
-	if err != nil {
-		p.Log(log.Error, "Could not append to persistence file: "+err.Error())
-		p.Log(log.Error, "Closing db file...")
-		p.dbFile.Close()
-		p.dbFile = nil
-	}
-}
-func (p *Persistence) removeFromFile(key string) {
-	if p.dbFile == nil {
-		p.Log(log.Error, "Persistence file is not open")
-		return
-	}
-	if _, ok := p.ItemMap[key]; !ok {
-		return
-	}
-
-	_, err := p.dbFile.WriteAt([]byte("X"), int64(p.ItemMap[key].Index*PERSISTANCE_DB_LINE_SIZE))
-	if err != nil {
-		p.Log(log.Error, "Could not edit persistence file: "+err.Error())
-		p.Log(log.Error, "Closing db file...")
-		p.dbFile.Close()
-		p.dbFile = nil
-	}
-}
-func (p *Persistence) finishFromFile(key string) {
-	if p.dbFile == nil {
-		p.Log(log.Error, "Persistence file is not open")
-		return
-	}
-	if item, ok := p.ItemMap[key]; !ok || item.Finished {
-		return
-	}
-
-	_, err := p.dbFile.WriteAt([]byte("F"), int64(p.ItemMap[key].Index*PERSISTANCE_DB_LINE_SIZE))
-	if err != nil {
-		p.Log(log.Error, "Could not edit persistence file: "+err.Error())
-		p.Log(log.Error, "Closing db file...")
-		p.dbFile.Close()
-		p.dbFile = nil
-	}
+func (p *Persistence) addToFile(key string) error {
+	_, err := p.dbFile.Write([]byte("A " + key + "\n"))
+	return err
 }
 
-func (p *Persistence) optimizeDataBase(repo *Repository) {
+func (p *Persistence) removeFromFile(key string) error {
+	item := p.ItemMap[key]
+	if item == nil {
+		return nil
+	}
+	_, err := p.dbFile.WriteAt([]byte("X"), int64(item.Index*PERSISTANCE_DB_LINE_SIZE))
+	return err
+}
+
+func (p *Persistence) finishFromFile(key string) error {
+	item := p.ItemMap[key]
+	if item == nil || item.Finished {
+		return nil
+	}
+	_, err := p.dbFile.WriteAt([]byte("F"), int64(item.Index*PERSISTANCE_DB_LINE_SIZE))
+	return err
+}
+
+func (p *Persistence) optimizeDataBase(repo *Repository) error {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 	if p.dbFile == nil {
-		p.Log(log.Error, "Persistence file is not open to optimize")
-		return
+		return errors.New("persistence file is not open")
 	}
 	optimizedFile, err := os.Create(PERSISTENCE_DB_FILE + ".tmp")
 	if err != nil {
-		p.Log(log.Error, "Could not create optimized persistence file: "+err.Error())
-		return
+		return fmt.Errorf("create optimized persistence file: %w", err)
 	}
-	defer optimizedFile.Close()
+	committed := false
+	defer func() {
+		if !committed {
+			optimizedFile.Close()
+		}
+	}()
 
 	newItemMap := make(map[string]*PersistenceItem)
-	var newCounter uint64 = 0
-	readedBytes := make([]byte, PERSISTANCE_DB_LINE_SIZE)
-	p.dbFile.Seek(0, io.SeekStart)
+	var restored []*PersistenceItem
+	var newCounter uint64
+	line := make([]byte, PERSISTANCE_DB_LINE_SIZE)
+	// ReadAt via SectionReader leaves the append offset unchanged on failure.
+	reader := io.NewSectionReader(p.dbFile, 0, math.MaxInt64)
 	for {
-		n, err := p.dbFile.Read(readedBytes)
+		_, err := io.ReadFull(reader, line)
 		if errors.Is(err, io.EOF) {
 			break
 		}
-		if n != int(PERSISTANCE_DB_LINE_SIZE) {
-			p.Log(log.Error, "Could not read full line from persistence file, readed bytes: "+string(readedBytes[:n]))
-			return
+		if errors.Is(err, io.ErrUnexpectedEOF) {
+			p.Log(log.Warning, "Discarding incomplete final persistence record")
+			break
 		}
-		typeByte := readedBytes[0]
-		if typeByte == 'X' {
+		if err != nil {
+			return fmt.Errorf("read persistence record: %w", err)
+		}
+		key := string(line[2 : len(line)-1])
+		if (line[0] != 'A' && line[0] != 'F' && line[0] != 'X') ||
+			line[1] != ' ' || line[len(line)-1] != '\n' || !IsValidKey(key) {
+			return errors.New("invalid persistence record")
+		}
+		if line[0] == 'X' {
 			continue
 		}
-		isFinished := typeByte == 'F'
-		key := string(readedBytes[2 : PERSISTANCE_DB_LINE_SIZE-1])
-		_, err = optimizedFile.Write(readedBytes)
-		if err != nil {
-			p.Log(log.Error, "Could not write to optimized persistence file: "+err.Error())
-			return
+		if _, err := optimizedFile.Write(line); err != nil {
+			return fmt.Errorf("write optimized persistence record: %w", err)
 		}
-		newItemMap[key] = &PersistenceItem{
-			Key:      key,
-			Index:    newCounter,
-			Finished: isFinished,
-		}
+		item := &PersistenceItem{Key: key, Index: newCounter, Finished: line[0] == 'F'}
+		newItemMap[key] = item
 		if repo != nil {
-			if isFinished {
-				repo.RegenerateFinishedItem(key)
-			} else {
-				repo.RegenerateQueueItem(key)
-			}
+			restored = append(restored, item)
 		}
 		newCounter++
 	}
 
+	// Keep the original file and index together until replacement succeeds.
+	// The replacement descriptor is already open and positioned for appends.
+	if err := os.Rename(PERSISTENCE_DB_FILE+".tmp", PERSISTENCE_DB_FILE); err != nil {
+		return fmt.Errorf("replace persistence file: %w", err)
+	}
 	p.dbFile.Close()
-	p.dbFile = nil
-	err = os.Rename(PERSISTENCE_DB_FILE+".tmp", PERSISTENCE_DB_FILE)
-	if err != nil {
-		p.Log(log.Error, "Could not rename optimized persistence file: "+err.Error())
-	}
-	p.dbFile, err = os.OpenFile(PERSISTENCE_DB_FILE, os.O_CREATE|os.O_RDWR, 0644)
-	if err != nil {
-		p.Log(log.Error, "Could not open optimized persistence file: "+err.Error())
-		p.dbFile = nil
-		return
-	}
-	p.dbFile.Seek(0, io.SeekEnd)
+	p.dbFile = optimizedFile
 	p.ItemMap = newItemMap
 	p.counter = newCounter
-	p.Log(log.Info, "Persistence database optimized")
-}
-func (p *Persistence) optimizationTask() {
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
-	defer p.wg.Done()
+	committed = true
 
-	for true {
-		<-ticker.C
-		if p.stopSignal {
-			return
+	// Publish recovered queue nodes only after the entire file is accepted.
+	for _, item := range restored {
+		if item.Finished {
+			repo.RegenerateFinishedItem(item.Key)
+		} else {
+			repo.RegenerateQueueItem(item.Key)
 		}
-		now := time.Now().Unix()
-		if (now - p.lastOptimization) < int64(3*60) { // 3 minutes
-			continue
-		}
-		p.optimizeDataBase(nil)
-		p.lastOptimization = now
 	}
+	p.Log(log.Info, "Persistence database optimized")
+	return nil
+}
+
+func (p *Persistence) applyAction(action *PersistanceAction) error {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+	if p.dbFile == nil {
+		return errors.New("persistence file is not open")
+	}
+	switch action.ActionType {
+	case PersistenceAdd:
+		if err := p.addToFile(action.Key); err != nil {
+			return err
+		}
+		p.ItemMap[action.Key] = &PersistenceItem{Key: action.Key, Index: p.counter}
+		p.counter++
+	case PersistenceRemove:
+		if err := p.removeFromFile(action.Key); err != nil {
+			return err
+		}
+		delete(p.ItemMap, action.Key)
+	case PersistanceFinish:
+		if err := p.finishFromFile(action.Key); err != nil {
+			return err
+		}
+		if item := p.ItemMap[action.Key]; item != nil {
+			item.Finished = true
+		}
+	case PersistenceClearQueue, PersistenceClearFinished:
+		finished := action.ActionType == PersistenceClearFinished
+		for key, item := range p.ItemMap {
+			if item.Finished == finished {
+				if err := p.removeFromFile(key); err != nil {
+					return err
+				}
+				delete(p.ItemMap, key)
+			}
+		}
+	default:
+		return errors.New("unknown persistence action type")
+	}
+	return nil
 }
 
 func (p *Persistence) actionsConsumer() {
+	defer p.wg.Done()
+	defer func() {
+		p.active.Store(false)
+		close(p.done) // Release producers waiting on a full channel after failure.
+	}()
+	ticker := time.NewTicker(3 * time.Minute)
+	defer ticker.Stop()
+	consume := func(action *PersistanceAction) bool {
+		if err := p.applyAction(action); err != nil {
+			p.Log(log.Error, "Disabling persistence after write failure: "+err.Error())
+			return false
+		}
+		return true
+	}
 	for {
 		select {
 		case action := <-p.actions:
-			p.mutex.Lock()
-			switch action.ActionType {
-			case PersistenceAdd:
-				p.ItemMap[action.Key] = &PersistenceItem{
-					Key:      action.Key,
-					Index:    p.counter,
-					Finished: false,
-				}
-				p.counter++
-				p.addToFile(action.Key)
-			case PersistenceRemove:
-				p.removeFromFile(action.Key)
-				delete(p.ItemMap, action.Key)
-			case PersistanceFinish:
-				if item, ok := p.ItemMap[action.Key]; ok {
-					item.Finished = true
-				}
-				p.finishFromFile(action.Key)
-			default:
-				p.Log(log.Error, "Unknown persistence action type")
-			}
-			p.mutex.Unlock()
-		default:
-			p.mutex.Lock()
-			if p.stopSignal {
-				p.wg.Done()
-				p.mutex.Unlock()
+			if !consume(action) {
 				return
 			}
-			if p.dbFile == nil {
-				p.wg.Done()
-				p.Log(log.Error, "Persistence file is not open, stopping actions consumer and disabling persistence")
-				p.Enabled = false
-				p.mutex.Unlock()
-				return
+		case <-ticker.C:
+			if err := p.optimizeDataBase(nil); err != nil {
+				p.Log(log.Error, "Could not optimize persistence: "+err.Error())
 			}
-			p.mutex.Unlock()
-			time.Sleep(100 * time.Millisecond)
+		case <-p.stop:
+			// Stop is called after request/cleanup producers have shut down.
+			// Drain accepted actions before closing the file.
+			for {
+				select {
+				case action := <-p.actions:
+					if !consume(action) {
+						return
+					}
+				default:
+					return
+				}
+			}
 		}
 	}
 }
 
+// Start initializes persistence once, before starting repository workers or HTTP.
 func (p *Persistence) Start(repo *Repository) {
-	dbFile, fileError := os.OpenFile(PERSISTENCE_DB_FILE, os.O_CREATE|os.O_RDWR, 0644)
-	if fileError != nil {
-		p.Log(log.Error, "Could not open persistence file: "+fileError.Error())
+	if !p.Enabled {
 		return
-	} else {
-		p.dbFile = dbFile
-		p.dbFile.Seek(0, io.SeekEnd)
+	}
+	dbFile, err := os.OpenFile(PERSISTENCE_DB_FILE, os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		p.Log(log.Error, "Could not open persistence file: "+err.Error())
+		return
+	}
+	p.dbFile = dbFile
+	if err := p.Regenerate(repo); err != nil {
+		p.Log(log.Error, "Could not restore persistence: "+err.Error())
+		p.dbFile.Close()
+		p.dbFile = nil
+		return
 	}
 	p.wg.Add(1)
+	p.active.Store(true)
 	go p.actionsConsumer()
-	p.wg.Add(1)
-	go p.optimizationTask()
 	p.Log(log.Info, "Started")
-	p.Regenerate(repo)
 }
+
 func (p *Persistence) Stop() {
-	p.stopSignal = true
+	p.active.Store(false)
+	if p.stop != nil {
+		p.stopOnce.Do(func() { close(p.stop) })
+	}
 	p.wg.Wait()
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
 	if p.dbFile != nil {
 		p.dbFile.Close()
 		p.dbFile = nil
@@ -248,81 +266,58 @@ func (p *Persistence) Stop() {
 	p.Log(log.Info, "Stopped")
 }
 
-func (p *Persistence) ClearAllNotFinished() {
-	for key, item := range p.ItemMap {
-		if !item.Finished {
-			p.actions <- &PersistanceAction{
-				ActionType: PersistenceRemove,
-				Key:        key,
-			}
-		}
+func (p *Persistence) enqueue(action *PersistanceAction, wait bool) {
+	if !p.active.Load() {
+		return
 	}
-}
-func (p *Persistence) ClearAllFinished() {
-	for key, item := range p.ItemMap {
-		if item.Finished {
-			p.actions <- &PersistanceAction{
-				ActionType: PersistenceRemove,
-				Key:        key,
-			}
+	if wait {
+		select {
+		case p.actions <- action:
+		case <-p.done:
+		case <-p.stop:
 		}
-	}
-}
-func (p *Persistence) AddItem(key string) {
-	if !p.Enabled {
 		return
 	}
 	select {
-	case p.actions <- &PersistanceAction{
-		ActionType: PersistenceAdd,
-		Key:        key,
-	}:
+	case p.actions <- action:
 	default:
-		p.Log(log.Warning, "Persistence action channel is full, dropping add action")
-	}
-}
-func (p *Persistence) RemoveItem(key string) {
-	if !p.Enabled {
-		return
-	}
-	select {
-	case p.actions <- &PersistanceAction{
-		ActionType: PersistenceRemove,
-		Key:        key,
-	}:
-	default:
-		p.Log(log.Warning, "Persistence action channel is full, dropping remove action")
-	}
-}
-func (p *Persistence) FinishItem(key string) {
-	if !p.Enabled {
-		return
-	}
-	p.actions <- &PersistanceAction{
-		ActionType: PersistanceFinish,
-		Key:        key,
+		p.Log(log.Warning, "Persistence action channel is full, dropping action")
 	}
 }
 
-func (p *Persistence) Regenerate(repo *Repository) {
+func (p *Persistence) ClearAllNotFinished() {
+	p.enqueue(&PersistanceAction{ActionType: PersistenceClearQueue}, true)
+}
+
+func (p *Persistence) ClearAllFinished() {
+	p.enqueue(&PersistanceAction{ActionType: PersistenceClearFinished}, true)
+}
+
+func (p *Persistence) AddItem(key string) {
+	p.enqueue(&PersistanceAction{ActionType: PersistenceAdd, Key: key}, false)
+}
+
+func (p *Persistence) RemoveItem(key string) {
+	p.enqueue(&PersistanceAction{ActionType: PersistenceRemove, Key: key}, false)
+}
+
+func (p *Persistence) FinishItem(key string) {
+	p.enqueue(&PersistanceAction{ActionType: PersistanceFinish, Key: key}, true)
+}
+
+func (p *Persistence) Regenerate(repo *Repository) error {
 	if !p.Enabled {
-		return
+		return nil
 	}
-	if p.dbFile == nil {
-		p.Log(log.Error, "Persistence file is not open to regenerate")
-		return
-	}
-	// The optimization also reads the file and rebuilds the ItemMap,
-	// so we can use it to load the data from the file
-	p.optimizeDataBase(repo)
+	return p.optimizeDataBase(repo)
 }
 
 func InitPersistence() *Persistence {
 	return &Persistence{
-		ItemMap: map[string]*PersistenceItem{},
+		ItemMap: make(map[string]*PersistenceItem),
 		Enabled: true,
-
-		actions:          make(chan *PersistanceAction, PERSISTENCE_ACTIONS_BUFFER_SIZE),
-		lastOptimization: time.Now().Unix(),
+		actions: make(chan *PersistanceAction, PERSISTENCE_ACTIONS_BUFFER_SIZE),
+		stop:    make(chan struct{}),
+		done:    make(chan struct{}),
 	}
 }

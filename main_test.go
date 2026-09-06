@@ -9,6 +9,7 @@ import (
 )
 
 func TestMainStartStop(t *testing.T) {
+	t.Chdir(t.TempDir()) // Never compact the developer's persistence file.
 	done := make(chan struct{})
 	go func() {
 		main()

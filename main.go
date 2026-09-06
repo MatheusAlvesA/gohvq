@@ -34,8 +34,8 @@ func main() {
 		persistenceInstance)
 
 	config.Start()
-	repositoryInstance.Start()
 	persistenceInstance.Start(repositoryInstance)
+	repositoryInstance.Start()
 	serverInstance.Start()
 
 	<-shutdownCall

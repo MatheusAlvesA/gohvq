@@ -62,10 +62,10 @@ func TestCreateItem(t *testing.T) {
 	if !IsValidKey(item.Key) {
 		t.Errorf("Created item has invalid key: %q", item.Key)
 	}
-	if repo.ItemMap[item.Key] != item {
+	if repo.ItemMap[item.Key] == nil {
 		t.Errorf("Created item not present on ItemMap")
 	}
-	if repo.Head.FirstItem != item {
+	if repo.Head.FirstItem.Key != item.Key {
 		t.Errorf("Created item should be the first on queue")
 	}
 	if repo.GetCurrentQueueSize() != 1 {
@@ -82,7 +82,7 @@ func TestCreateItem(t *testing.T) {
 	if repo.GetCurrentQueueSize() != 2 {
 		t.Errorf("Incorrect queue size, expected 2 got %d", repo.GetCurrentQueueSize())
 	}
-	if repo.Head.FirstItem != item || repo.Head.LastItem != second {
+	if repo.Head.FirstItem.Key != item.Key || repo.Head.LastItem.Key != second.Key {
 		t.Errorf("Queue order incorrect after second insert")
 	}
 }
@@ -116,7 +116,7 @@ func TestFinishItems(t *testing.T) {
 	if len(finished) != 2 {
 		t.Fatalf("Expected 2 finished items, got %d", len(finished))
 	}
-	if finished[0] != item1 || finished[1] != item2 {
+	if finished[0].Key != item1.Key || finished[1].Key != item2.Key {
 		t.Errorf("Finished items should follow queue order (FIFO)")
 	}
 	if repo.GetCurrentQueueSize() != 1 {
@@ -125,16 +125,16 @@ func TestFinishItems(t *testing.T) {
 	if repo.ItemMap[item1.Key] != nil || repo.ItemMap[item2.Key] != nil {
 		t.Errorf("Finished items should be removed from ItemMap")
 	}
-	if repo.FinishedMap[item1.Key] != item1 || repo.FinishedMap[item2.Key] != item2 {
+	if repo.FinishedMap[item1.Key] == nil || repo.FinishedMap[item2.Key] == nil {
 		t.Errorf("Finished items should be present on FinishedMap")
 	}
 	if finished[0].FinishedAt == 0 {
 		t.Errorf("Finished item should have FinishedAt set")
 	}
-	if finished[0].Next != nil || finished[0].Previus != nil {
+	if repo.FinishedMap[item1.Key].Next != nil || repo.FinishedMap[item1.Key].Previus != nil {
 		t.Errorf("Finished item should not hold queue pointers")
 	}
-	if repo.Head.FirstItem != item3 {
+	if repo.Head.FirstItem.Key != item3.Key {
 		t.Errorf("Remaining item should be the queue head")
 	}
 }
@@ -167,7 +167,7 @@ func TestGetFinished(t *testing.T) {
 	item, _ := repo.CreateItem()
 	repo.FinishItems(1)
 
-	if repo.GetFinished(item.Key) != item {
+	if got := repo.GetFinished(item.Key); got == nil || got.Key != item.Key {
 		t.Errorf("GetFinished should return the finished item")
 	}
 }
@@ -183,7 +183,7 @@ func TestDeleteFinished(t *testing.T) {
 	repo.FinishItems(1)
 
 	deleted := repo.DeleteFinished(item.Key)
-	if deleted != item {
+	if deleted == nil || deleted.Key != item.Key {
 		t.Errorf("DeleteFinished should return the deleted item")
 	}
 	if repo.GetFinished(item.Key) != nil {
@@ -215,13 +215,13 @@ func TestGetAndPingItemByKey(t *testing.T) {
 	}
 
 	item, _ := repo.CreateItem()
-	item.LastPing.Store(time.Now().Unix() - 30)
+	repo.ItemMap[item.Key].LastPing.Store(time.Now().Unix() - 30)
 
 	got := repo.GetAndPingItemByKey(item.Key)
-	if got != item {
+	if got == nil || got.Key != item.Key {
 		t.Fatalf("Get should return the item")
 	}
-	if got.LastPing.Load() < time.Now().Unix()-5 {
+	if got.LastPing < time.Now().Unix()-5 {
 		t.Errorf("Get should update LastPing")
 	}
 }
@@ -232,8 +232,8 @@ func TestDoClear(t *testing.T) {
 	alive, _ := repo.CreateItem()
 	expired2, _ := repo.CreateItem()
 
-	expired.LastPing.Store(time.Now().Unix() - int64(repo.PingTimeout) - 1)
-	expired2.LastPing.Store(time.Now().Unix() - int64(repo.PingTimeout) - 1)
+	repo.ItemMap[expired.Key].LastPing.Store(time.Now().Unix() - int64(repo.PingTimeout) - 1)
+	repo.ItemMap[expired2.Key].LastPing.Store(time.Now().Unix() - int64(repo.PingTimeout) - 1)
 
 	repo.doClear()
 
@@ -243,13 +243,13 @@ func TestDoClear(t *testing.T) {
 	if repo.ItemMap[expired.Key] != nil || repo.ItemMap[expired2.Key] != nil {
 		t.Errorf("Expired items should be removed from ItemMap")
 	}
-	if repo.ItemMap[alive.Key] != alive {
+	if repo.ItemMap[alive.Key] == nil {
 		t.Errorf("Alive item should remain on ItemMap")
 	}
-	if repo.Head.FirstItem != alive || repo.Head.LastItem != alive {
+	if repo.Head.FirstItem.Key != alive.Key || repo.Head.LastItem.Key != alive.Key {
 		t.Errorf("Alive item should be the only one on queue")
 	}
-	if alive.Position != 0 {
+	if alive = repo.GetAndPingItemByKey(alive.Key); alive.Position != 0 {
 		t.Errorf("Positions should be recomputed, expected 0 got %d", alive.Position)
 	}
 }
