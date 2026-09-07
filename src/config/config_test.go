@@ -15,6 +15,8 @@ func TestDefaultConfigAppliedToServices(t *testing.T) {
 		write bool
 	}{
 		{name: "missing"},
+		{name: "invalid header type", data: `{"clientIPHeader":123}`, write: true},
+		{name: "invalid after header", data: `{"clientIPHeader":"X-Real-IP","pingTimeout":"invalid"}`, write: true},
 		{name: "negative IP limit", data: `{"maxEntriesPerIP":-1}`, write: true},
 		{name: "invalid after IP limit", data: `{"maxEntriesPerIP":3,"pingTimeout":"invalid"}`, write: true},
 		{name: "empty", write: true},
@@ -39,6 +41,9 @@ func TestDefaultConfigAppliedToServices(t *testing.T) {
 			srv, repo, pst := server.InitServer(), repository.InitRepository(), repository.InitPersistence()
 			c.SetServices(srv, repo, log.InitService(), pst)
 			c.Start()
+			if srv.ClientIPHeader != "" {
+				t.Fatal("default client IP header was not preserved")
+			}
 			if srv.Server.Addr != "0.0.0.0:4242" || !srv.CheckAdminToken(token) {
 				t.Fatal("default address or generated admin token was not applied")
 			}
@@ -58,6 +63,7 @@ func TestCustomConfigAppliedToServices(t *testing.T) {
 		"localHostOnly": true,
 		"serverPort": 8181,
 		"adminToken": "custom_admin_token",
+		"clientIPHeader": "X-Real-IP",
 		"persistenceEnabled": false,
 		"clearMaxSeconds": 3,
 		"pingTimeout": 120,
@@ -71,6 +77,9 @@ func TestCustomConfigAppliedToServices(t *testing.T) {
 	srv, repo, pst := server.InitServer(), repository.InitRepository(), repository.InitPersistence()
 	c.SetServices(srv, repo, log.InitService(), pst)
 	c.Start()
+	if srv.ClientIPHeader != "X-Real-IP" {
+		t.Fatal("custom client IP header was not applied")
+	}
 	if srv.Server.Addr != "127.0.0.1:8181" || !srv.CheckAdminToken("custom_admin_token") {
 		t.Fatal("custom listen address or admin token was not applied")
 	}

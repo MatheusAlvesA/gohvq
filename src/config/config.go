@@ -10,9 +10,10 @@ import (
 )
 
 type ConfigService struct {
-	LocalhostOnly bool   `json:"localHostOnly"`
-	ServerPort    uint32 `json:"serverPort"`
-	AdminToken    string `json:"adminToken"`
+	LocalhostOnly  bool   `json:"localHostOnly"`
+	ServerPort     uint32 `json:"serverPort"`
+	AdminToken     string `json:"adminToken"`
+	ClientIPHeader string `json:"clientIPHeader,omitempty"`
 
 	PersistenceEnabled bool `json:"persistenceEnabled,omitempty"`
 
@@ -34,6 +35,7 @@ func (c *ConfigService) applyInitialToServer() {
 		c.srv.Server.Addr = fmt.Sprintf("0.0.0.0:%d", c.ServerPort)
 	}
 	c.srv.AccessTk = c.AdminToken
+	c.srv.ClientIPHeader = c.ClientIPHeader
 }
 
 func (c *ConfigService) applyInitialToRepository() {

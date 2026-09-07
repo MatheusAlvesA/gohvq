@@ -8,18 +8,21 @@ import (
 	"crypto/subtle"
 	"encoding/json/v2"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/netip"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
 type Server struct {
-	Server   *http.Server
-	repo     *repository.Repository
-	log      *log.LogService
-	AccessTk string
+	Server         *http.Server
+	repo           *repository.Repository
+	log            *log.LogService
+	AccessTk       string
+	ClientIPHeader string
 }
 
 func (s *Server) CheckAdminToken(token string) bool {
@@ -43,6 +46,41 @@ func (s *Server) SetAdminAcessToken(token string) bool {
 	return true
 }
 
+// clientIP uses only the explicitly configured source.
+func (s *Server) clientIP(r *http.Request) (netip.Addr, error) {
+	if s.ClientIPHeader != "" {
+		values := r.Header.Values(s.ClientIPHeader)
+		if len(values) == 0 {
+			return netip.Addr{}, fmt.Errorf("Required client IP header %q is missing", s.ClientIPHeader)
+		}
+		if len(values) != 1 {
+			return netip.Addr{}, fmt.Errorf("Client IP header %q must contain a single IP address", s.ClientIPHeader)
+		}
+		addr, err := netip.ParseAddr(strings.TrimSpace(values[0]))
+		if err != nil {
+			return netip.Addr{}, fmt.Errorf("Client IP header %q must contain a valid IPv4 or IPv6 address", s.ClientIPHeader)
+		}
+		return addr, nil
+	}
+	addr, err := netip.ParseAddrPort(r.RemoteAddr)
+	return addr.Addr(), err
+}
+
+func (s *Server) requireClientIPHeader(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.ClientIPHeader != "" {
+			if _, err := s.clientIP(r); err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.MarshalWrite(w, map[string]string{"message": err.Error()})
+				s.Log(log.Warning, fmt.Sprintf("Rejected request: method=%q path=%q remote=%q reason=%q", r.Method, r.URL.Path, r.RemoteAddr, err.Error()))
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func handleEnter(s *Server, w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if s.repo == nil {
@@ -50,13 +88,13 @@ func handleEnter(s *Server, w http.ResponseWriter, r *http.Request) {
 		json.MarshalWrite(w, map[string]string{"message": "Repository not set"})
 		return
 	}
-	addr, err := netip.ParseAddrPort(r.RemoteAddr)
+	addr, err := s.clientIP(r)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		json.MarshalWrite(w, map[string]string{"message": "Invalid client address"})
 		return
 	}
-	item, err := s.repo.CreateItem(addr.Addr().WithZone("").Unmap().String())
+	item, err := s.repo.CreateItem(addr.WithZone("").Unmap().String())
 	if errors.Is(err, repository.ErrIPLimitReached) {
 		w.WriteHeader(http.StatusTooManyRequests)
 		json.MarshalWrite(w, map[string]string{"message": "Queue entry limit reached for IP"})
@@ -297,12 +335,12 @@ func InitServer() *Server {
 		},
 	}
 
-	mux.HandleFunc("POST /enter", func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("POST /enter", s.requireClientIPHeader(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handleEnter(s, w, r)
-	})
-	mux.HandleFunc("GET /position", func(w http.ResponseWriter, r *http.Request) {
+	})))
+	mux.Handle("GET /position", s.requireClientIPHeader(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handlePosition(s, w, r)
-	})
+	})))
 	mux.HandleFunc("POST /admin/finishItems", func(w http.ResponseWriter, r *http.Request) {
 		handleAdminFinish(s, w, r)
 	})

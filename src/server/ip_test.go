@@ -1,8 +1,13 @@
 package server
 
 import (
+	"MatheusAlvesA/gohvq/src/log"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 )
 
@@ -101,6 +106,154 @@ func TestEnterIPLimit(t *testing.T) {
 		}
 		if !json.Valid(rec.Body.Bytes()) {
 			t.Fatal("invalid JSON response")
+		}
+	}
+}
+
+func TestConfiguredClientIPHeader(t *testing.T) {
+	for _, tc := range []struct{ value, want string }{
+		{"203.0.113.7", "203.0.113.7"},
+		{" 2001:db8::7 ", "2001:db8::7"},
+		{"::ffff:203.0.113.7", "203.0.113.7"},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			s := newTestServer()
+			s.ClientIPHeader = "x-client-ip"
+			s.repo.MaxEntriesPerIP = 1
+			for i := range 2 {
+				req := httptest.NewRequest("POST", "/enter", nil)
+				req.RemoteAddr = "invalid connection address"
+				req.Header.Set("X-Client-IP", tc.value)
+				req.Header.Set("X-Real-IP", "192.0.2.99")
+				rec := httptest.NewRecorder()
+				s.Server.Handler.ServeHTTP(rec, req)
+				if i == 1 {
+					if rec.Code != 429 || s.repo.GetCurrentQueueSize() != 1 {
+						t.Fatalf("header IP limit not enforced: %d %s", rec.Code, rec.Body.String())
+					}
+					continue
+				}
+				var body struct{ Key string }
+				if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+					t.Fatal(err)
+				}
+				if rec.Code != 201 {
+					t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+				}
+				item := s.repo.GetAndPingItemByKey(body.Key)
+				if item == nil || item.IP != tc.want {
+					t.Fatalf("unexpected item: %+v", item)
+				}
+			}
+		})
+	}
+}
+
+func TestClientIPHeaderRejection(t *testing.T) {
+	for _, values := range [][]string{nil, {""}, {"   "}, {"not-an-ip"}, {"192.0.2.1:80"}, {"192.0.2.1, 192.0.2.2"}, {"192.0.2.1", "192.0.2.2"}} {
+		for _, route := range []struct{ method, path string }{
+			{"POST", "/enter"},
+			{"GET", "/position"},
+		} {
+			t.Run(fmt.Sprintf("%s/%v", route.path, values), func(t *testing.T) {
+				s := newTestServer()
+				s.ClientIPHeader = "X-Client-IP"
+				s.SetLogService(log.InitService())
+				s.SetAdminAcessToken("test-admin-token")
+				item, err := s.repo.CreateItem("192.0.2.1")
+				if err != nil {
+					t.Fatal(err)
+				}
+				output, err := os.CreateTemp(t.TempDir(), "log")
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer output.Close()
+				old := os.Stdout
+				os.Stdout = output
+				defer func() { os.Stdout = old }()
+				req := httptest.NewRequest(route.method, route.path, nil)
+				req.Header.Set("Authorization", s.AccessTk)
+				req.Header.Set("X-Real-IP", "192.0.2.2")
+				if values != nil {
+					req.Header["X-Client-Ip"] = values
+				}
+				rec := httptest.NewRecorder()
+				s.Server.Handler.ServeHTTP(rec, req)
+				if rec.Code != 400 || s.repo.GetCurrentQueueSize() != 1 || s.repo.GetAndPingItemByKey(item.Key) == nil {
+					t.Fatalf("rejection changed queue or wrong status: %d %s", rec.Code, rec.Body.String())
+				}
+				var body map[string]string
+				if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+					t.Fatal(err)
+				}
+				if !strings.Contains(body["message"], "X-Client-IP") {
+					t.Fatalf("missing reason: %v", body)
+				}
+				if _, err := output.Seek(0, 0); err != nil {
+					t.Fatal(err)
+				}
+				logged, err := io.ReadAll(output)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, want := range []string{"Rejected request", route.method, route.path, req.RemoteAddr, "X-Client-IP"} {
+					if !strings.Contains(string(logged), want) {
+						t.Fatalf("log missing %q: %s", want, logged)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestAdminRoutesIgnoreClientIPHeader(t *testing.T) {
+	for _, header := range []string{"", "invalid-ip"} {
+		for _, route := range []struct{ method, path string }{
+			{"POST", "/admin/finishItems"},
+			{"GET", "/admin/finishedItem/"},
+			{"DELETE", "/admin/finishedItem/"},
+			{"DELETE", "/admin/clearFinished"},
+			{"DELETE", "/admin/clearQueue"},
+		} {
+			t.Run(route.method+route.path+"/"+header, func(t *testing.T) {
+				s := newTestServer()
+				s.ClientIPHeader = "X-Client-IP"
+				s.SetAdminAcessToken("test-admin-token")
+				finished, err := s.repo.CreateItem("192.0.2.1")
+				if err != nil {
+					t.Fatal(err)
+				}
+				s.repo.FinishItems(1)
+				if _, err := s.repo.CreateItem("192.0.2.2"); err != nil {
+					t.Fatal(err)
+				}
+				path := route.path
+				if strings.HasSuffix(path, "/") {
+					path += finished.Key
+				}
+				for _, authorized := range []bool{false, true} {
+					req := httptest.NewRequest(route.method, path, nil)
+					if header != "" {
+						req.Header.Set(s.ClientIPHeader, header)
+					}
+					if authorized {
+						req.Header.Set("Authorization", s.AccessTk)
+					}
+					rec := httptest.NewRecorder()
+					s.Server.Handler.ServeHTTP(rec, req)
+					want := 403
+					if authorized {
+						want = 200
+					}
+					if rec.Code != want {
+						t.Fatalf("status=%d want=%d body=%s", rec.Code, want, rec.Body.String())
+					}
+					if !authorized && (s.repo.GetCurrentQueueSize() != 1 || s.repo.GetFinished(finished.Key) == nil) {
+						t.Fatal("unauthorized request changed queue state")
+					}
+				}
+			})
 		}
 	}
 }

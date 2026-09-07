@@ -11,6 +11,7 @@ reject the entire configuration without partially applying valid fields.
 | `localHostOnly` | Boolean | `false` | Listen on `127.0.0.1` when `true`, or all IPv4 interfaces (`0.0.0.0`) when `false`. |
 | `serverPort` | Nonnegative integer | `4242` | HTTP listening port. Use `1`–`65535` for a fixed port; `0` lets the operating system choose an available port. |
 | `adminToken` | String | Cryptographically generated token | Token required in the `Authorization` header for administrator routes. Send the token directly, without a `Bearer` prefix. Tokens shorter than 10 characters cannot authorize requests. The generated token uses the repository's `KEY_SIZE` and is logged when used as the default. |
+| `clientIPHeader` | String | `""` | Header containing the client IP. Empty or omitted uses the connection address and ignores request headers. When configured, `POST /enter` and `GET /position` require this header with a single valid IPv4 or IPv6 address; otherwise it returns HTTP 400 and logs the rejection before executing the handler. Administrator routes ignore this setting. |
 | `persistenceEnabled` | Boolean | `true` | Recover and asynchronously persist queue data in `gohvq_persistence.db` in the working directory. When `false`, queue data exists only in memory for that run. |
 | `clearMaxSeconds` | Nonnegative integer | `1` | Time budget in seconds for each cleanup scan. `0` gives an immediate timeout budget; it does not disable the budget. |
 | `pingTimeout` | Nonnegative integer | `60` | An active ticket becomes eligible for removal when the seconds since its last ping exceed this value. `GET /position?key=...` refreshes the ping of an active ticket. `0` does not disable expiration. |
@@ -24,6 +25,7 @@ per IP:
 {
   "localHostOnly": false,
   "serverPort": 4242,
+  "clientIPHeader": "",
   "adminToken": "replace-with-your-own-secret-token",
   "persistenceEnabled": true,
   "clearMaxSeconds": 1,
@@ -57,7 +59,13 @@ queue tickets for each IP. The default, `0`, means unlimited:
 The repository enforces the limit with an IP count map under the queue lock,
 using expected O(1) work per admission or departure. HTTP `POST /enter` returns
 429 with a JSON message when the limit is reached, without adding a ticket.
-The client IP comes from the connection address; forwarded headers are ignored.
+The client IP comes from the connection address unless `clientIPHeader` is set.
+For example, `"clientIPHeader": "X-Real-IP"` uses only that header, with
+case-insensitive header name matching. Configure your reverse proxy to overwrite
+this header with the client IP and restrict direct access to the service when
+using it. Comma-separated address lists (including X-Forwarded-For chains),
+multiple header values, empty values, and addresses with ports are rejected.
+Rejection logs include the method, path, connection address, and reason.
 Equivalent IPv4 and IPv4-mapped IPv6 addresses share a count.
 
 Finishing or expiring a ticket releases its slot. Clearing the active queue
