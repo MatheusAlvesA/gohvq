@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/json/v2"
+	"errors"
 	"net/http"
 	"net/netip"
 	"net/url"
@@ -56,6 +57,11 @@ func handleEnter(s *Server, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	item, err := s.repo.CreateItem(addr.Addr().WithZone("").Unmap().String())
+	if errors.Is(err, repository.ErrIPLimitReached) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		json.MarshalWrite(w, map[string]string{"message": "Queue entry limit reached for IP"})
+		return
+	}
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.MarshalWrite(w, map[string]string{"message": "Fail to create new item"})

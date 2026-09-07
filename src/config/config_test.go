@@ -15,6 +15,8 @@ func TestDefaultConfigAppliedToServices(t *testing.T) {
 		write bool
 	}{
 		{name: "missing"},
+		{name: "negative IP limit", data: `{"maxEntriesPerIP":-1}`, write: true},
+		{name: "invalid after IP limit", data: `{"maxEntriesPerIP":3,"pingTimeout":"invalid"}`, write: true},
 		{name: "empty", write: true},
 		{name: "invalid JSON", data: "not JSON", write: true},
 		{name: "empty object", data: "{}", write: true},
@@ -40,7 +42,7 @@ func TestDefaultConfigAppliedToServices(t *testing.T) {
 			if srv.Server.Addr != "0.0.0.0:4242" || !srv.CheckAdminToken(token) {
 				t.Fatal("default address or generated admin token was not applied")
 			}
-			if repo.ClearMaxTime != 1 || repo.PingTimeout != 60 || repo.ClearFrequency != 10 {
+			if repo.ClearMaxTime != 1 || repo.PingTimeout != 60 || repo.ClearFrequency != 10 || repo.MaxEntriesPerIP != 0 {
 				t.Fatal("default cleanup settings were not applied")
 			}
 			if !pst.Enabled || repo.Persistence != pst {
@@ -59,7 +61,8 @@ func TestCustomConfigAppliedToServices(t *testing.T) {
 		"persistenceEnabled": false,
 		"clearMaxSeconds": 3,
 		"pingTimeout": 120,
-		"clearFrequency": 20
+		"clearFrequency": 20,
+ "maxEntriesPerIP": 3
 	}`
 	if err := os.WriteFile("gohvq_config.json", []byte(data), 0600); err != nil {
 		t.Fatal(err)
@@ -71,7 +74,7 @@ func TestCustomConfigAppliedToServices(t *testing.T) {
 	if srv.Server.Addr != "127.0.0.1:8181" || !srv.CheckAdminToken("custom_admin_token") {
 		t.Fatal("custom listen address or admin token was not applied")
 	}
-	if repo.ClearMaxTime != 3 || repo.PingTimeout != 120 || repo.ClearFrequency != 20 {
+	if repo.ClearMaxTime != 3 || repo.PingTimeout != 120 || repo.ClearFrequency != 20 || repo.MaxEntriesPerIP != 3 {
 		t.Fatal("custom cleanup settings were not applied")
 	}
 	if pst.Enabled || repo.Persistence != pst {

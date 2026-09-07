@@ -3,6 +3,7 @@ package repository
 import (
 	"MatheusAlvesA/gohvq/src/log"
 	"crypto/rand"
+	"errors"
 	"math/big"
 	"net/netip"
 	"sync"
@@ -14,11 +15,18 @@ import (
 const KEY_SIZE uint = 20
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
+// ErrIPLimitReached indicates that the IP already has its allowed active tickets.
+var ErrIPLimitReached = errors.New("queue entry limit reached for IP")
+
 type Repository struct {
 	Head        *QueueHead
 	ItemMap     map[string]*QueueItem
 	FinishedMap map[string]*QueueItem
 	Persistence *Persistence
+
+	// MaxEntriesPerIP limits active tickets per IP; zero disables the limit.
+	MaxEntriesPerIP uint
+	ipCounts        map[string]uint64 // Protected by mu, including when the limit is disabled.
 
 	PingTimeout    uint
 	ClearFrequency uint
@@ -70,6 +78,9 @@ func (r *Repository) CreateItem(ip string) (*ItemSnapshot, error) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.MaxEntriesPerIP > 0 && r.ipCounts[ip] >= uint64(r.MaxEntriesPerIP) {
+		return nil, ErrIPLimitReached
+	}
 	selectedKey := ""
 	for selectedKey == "" || r.ItemMap[selectedKey] != nil {
 		newKey, err := GenerateRandomKey()
@@ -86,12 +97,17 @@ func (r *Repository) CreateItem(ip string) (*ItemSnapshot, error) {
 	newItem.LastPing.Store(time.Now().Unix())
 	r.Head.AddItem(newItem)
 	r.ItemMap[selectedKey] = newItem
+	r.ipCounts[ip]++
 
 	r.Persistence.AddItem(selectedKey, ip)
 	return newItem.snapshot(), nil
 }
 
 func (r *Repository) RegenerateQueueItem(key, ip string) {
+	// Recovery bypasses admission limits but uses the same canonical IP counts.
+	if addr, err := netip.ParseAddr(ip); err == nil {
+		ip = addr.WithZone("").Unmap().String()
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	newItem := new(QueueItem)
@@ -101,6 +117,7 @@ func (r *Repository) RegenerateQueueItem(key, ip string) {
 	newItem.LastPing.Store(time.Now().Unix())
 	r.Head.AddItem(newItem)
 	r.ItemMap[key] = newItem
+	r.ipCounts[ip]++
 }
 func (r *Repository) RegenerateFinishedItem(key, ip string) {
 	r.muFinished.Lock()
@@ -127,6 +144,7 @@ func (r *Repository) ClearQueue() {
 	r.Head.LastItem = nil
 	r.Head.Length.Store(0)
 	r.ItemMap = map[string]*QueueItem{}
+	r.ipCounts = map[string]uint64{}
 	r.Log(log.Warning, "Queue cleared")
 	r.Persistence.ClearAllNotFinished()
 }
@@ -156,6 +174,7 @@ func (r *Repository) FinishItems(n uint) []*ItemSnapshot {
 		current.Previus = nil
 		current.FinishedAt = now
 		delete(r.ItemMap, current.Key)
+		r.decrementIPLocked(current.IP)
 		r.FinishedMap[current.Key] = current
 		resultList = append(resultList, current.snapshot())
 		r.Persistence.FinishItem(current.Key)
@@ -167,6 +186,15 @@ func (r *Repository) FinishItems(n uint) []*ItemSnapshot {
 	}
 
 	return resultList
+}
+
+// decrementIPLocked releases an active ticket and drops unused IP entries.
+func (r *Repository) decrementIPLocked(ip string) {
+	if r.ipCounts[ip] <= 1 {
+		delete(r.ipCounts, ip)
+	} else {
+		r.ipCounts[ip]--
+	}
 }
 
 func (r *Repository) GetFinished(key string) *ItemSnapshot {
@@ -266,6 +294,7 @@ func (r *Repository) doClearLocked() (stats cleanupStats) {
 			tmpNext := currentItem.Next
 			r.Head.Detach(currentItem)
 			delete(r.ItemMap, currentItem.Key)
+			r.decrementIPLocked(currentItem.IP)
 			r.Persistence.RemoveItem(currentItem.Key)
 			currentItem = tmpNext
 		}
@@ -298,6 +327,7 @@ func (r *Repository) Stop() {
 func InitRepository() *Repository {
 	return &Repository{
 		Head:        &QueueHead{},
+		ipCounts:    map[string]uint64{},
 		ItemMap:     map[string]*QueueItem{},
 		FinishedMap: map[string]*QueueItem{},
 

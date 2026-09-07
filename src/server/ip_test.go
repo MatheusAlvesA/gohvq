@@ -79,3 +79,28 @@ func TestClientIPVisibility(t *testing.T) {
 		})
 	}
 }
+
+func TestEnterIPLimit(t *testing.T) {
+	s := newTestServer()
+	s.repo.MaxEntriesPerIP = 1
+	for i, remote := range []string{"192.0.2.1:1234", "[::ffff:192.0.2.1]:5678", "192.0.2.2:1234"} {
+		req := httptest.NewRequest("POST", "/enter", nil)
+		req.RemoteAddr = remote
+		req.Header.Set("X-Forwarded-For", "203.0.113.1")
+		rec := httptest.NewRecorder()
+		s.Server.Handler.ServeHTTP(rec, req)
+		want, size := 201, uint64(1)
+		if i == 1 {
+			want = 429
+		}
+		if i == 2 {
+			size = 2
+		}
+		if rec.Code != want || s.repo.GetCurrentQueueSize() != size {
+			t.Fatalf("status=%d size=%d", rec.Code, s.repo.GetCurrentQueueSize())
+		}
+		if !json.Valid(rec.Body.Bytes()) {
+			t.Fatal("invalid JSON response")
+		}
+	}
+}
