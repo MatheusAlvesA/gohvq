@@ -36,7 +36,12 @@ func main() {
 	config.Start()
 	persistenceInstance.Start(repositoryInstance)
 	repositoryInstance.Start()
-	serverInstance.Start()
+	if err := serverInstance.Start(); err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to start server:", err)
+		repositoryInstance.Stop()
+		persistenceInstance.Stop()
+		os.Exit(1)
+	}
 
 	<-shutdownCall
 	fmt.Println()

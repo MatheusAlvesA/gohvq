@@ -6,9 +6,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"crypto/tls"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/netip"
 	"net/url"
@@ -18,6 +20,8 @@ import (
 )
 
 type Server struct {
+	TLSCertFile       string
+	TLSKeyFile        string
 	Server            *http.Server
 	repo              *repository.Repository
 	log               *log.LogService
@@ -292,7 +296,24 @@ func (s *Server) Log(logType string, message string) {
 	s.log.PrintLn(logType, "SERVER", message)
 }
 
-func (s *Server) Start() {
+func (s *Server) Start() error {
+	if (s.TLSCertFile == "") != (s.TLSKeyFile == "") {
+		return errors.New("tlsCertFile and tlsKeyFile must both be configured")
+	}
+	scheme := "http"
+	if s.TLSCertFile != "" {
+		certificate, err := tls.LoadX509KeyPair(s.TLSCertFile, s.TLSKeyFile)
+		if err != nil {
+			return fmt.Errorf("load TLS certificate and key: %w", err)
+		}
+		s.Server.TLSConfig = &tls.Config{Certificates: []tls.Certificate{certificate}}
+		scheme = "https"
+	}
+	listener, err := net.Listen("tcp", s.Server.Addr)
+	if err != nil {
+		return err
+	}
+
 	if s.AccessTk == "" {
 		tk, err := repository.GenerateRandomKey()
 		if err != nil {
@@ -304,12 +325,18 @@ func (s *Server) Start() {
 	}
 
 	go func() {
-		s.Log(log.Info, "Starting on "+s.Server.Addr)
-		err := s.Server.ListenAndServe()
-		if err != nil {
+		s.Log(log.Info, "Starting on "+scheme+"://"+listener.Addr().String())
+		var err error
+		if scheme == "https" {
+			err = s.Server.ServeTLS(listener, "", "")
+		} else {
+			err = s.Server.Serve(listener)
+		}
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			s.Log(log.Error, err.Error())
 		}
 	}()
+	return nil
 }
 func (s *Server) Stop() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

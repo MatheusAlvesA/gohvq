@@ -259,7 +259,7 @@ func (p *Persistence) Start(repo *Repository) {
 }
 
 func (p *Persistence) Stop() {
-	p.active.Store(false)
+	wasActive := p.active.Swap(false)
 	if p.stop != nil {
 		p.stopOnce.Do(func() { close(p.stop) })
 	}
@@ -270,7 +270,9 @@ func (p *Persistence) Stop() {
 		p.dbFile.Close()
 		p.dbFile = nil
 	}
-	p.Log(log.Info, "Stopped")
+	if wasActive {
+		p.Log(log.Info, "Stopped")
+	}
 }
 
 func (p *Persistence) enqueue(action *PersistanceAction, wait bool) {

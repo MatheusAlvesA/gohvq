@@ -75,3 +75,24 @@ resets all counts. Finished tickets do not count toward the limit.
 Persistence recovery restores every active ticket and rebuilds counts even if
 an IP exceeds the configured limit. New entries for that IP are rejected until
 its active count falls below the limit. The persistence format is unchanged.
+
+## HTTPS
+
+Set `tlsCertFile` and `tlsKeyFile` to the PEM certificate chain and private key
+file paths in `gohvq_config.json`, for example:
+
+```json
+{
+  "serverPort": 4242,
+  "tlsCertFile": "certs/fullchain.pem",
+  "tlsKeyFile": "certs/privkey.pem"
+}
+```
+
+Relative paths resolve from the working directory. With both paths set, the
+configured port serves HTTPS exclusively. Plain HTTP requests are rejected
+without reaching API handlers; there is no HTTP listener or redirect service.
+When both values are omitted or empty, the server uses HTTP as before.
+Providing only one nonempty path, unreadable files, or an invalid certificate/key
+pair causes startup to fail without falling back to HTTP. Certificates are loaded
+at startup; restart the service after replacing them.

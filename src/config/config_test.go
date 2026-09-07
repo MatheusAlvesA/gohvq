@@ -15,6 +15,9 @@ func TestDefaultConfigAppliedToServices(t *testing.T) {
 		write bool
 	}{
 		{name: "missing"},
+		{name: "invalid certificate type", data: `{"tlsCertFile":123}`, write: true},
+		{name: "invalid key type", data: `{"tlsKeyFile":123}`, write: true},
+		{name: "invalid after TLS fields", data: `{"tlsCertFile":"cert.pem","tlsKeyFile":"key.pem","pingTimeout":"invalid"}`, write: true},
 		{name: "invalid origin type", data: `{"corsAllowedOrigin":123}`, write: true},
 		{name: "invalid after origin", data: `{"corsAllowedOrigin":"https://app.example.com","pingTimeout":"invalid"}`, write: true},
 		{name: "invalid header type", data: `{"clientIPHeader":123}`, write: true},
@@ -46,6 +49,9 @@ func TestDefaultConfigAppliedToServices(t *testing.T) {
 			if srv.CORSAllowedOrigin != "" || c.CORSAllowedOrigin != "" {
 				t.Fatal("default CORS origin was not preserved")
 			}
+			if c.TLSCertFile != "" || c.TLSKeyFile != "" || srv.TLSCertFile != "" || srv.TLSKeyFile != "" {
+				t.Fatal("default TLS configuration was not preserved")
+			}
 			if srv.ClientIPHeader != "" {
 				t.Fatal("default client IP header was not preserved")
 			}
@@ -67,6 +73,8 @@ func TestCustomConfigAppliedToServices(t *testing.T) {
 	data := `{
 		"localHostOnly": true,
 		"serverPort": 8181,
+ "tlsCertFile": "cert.pem",
+ "tlsKeyFile": "key.pem",
 		"adminToken": "custom_admin_token",
 		"clientIPHeader": "X-Real-IP",
 		"corsAllowedOrigin": "https://app.example.com",
@@ -83,6 +91,9 @@ func TestCustomConfigAppliedToServices(t *testing.T) {
 	srv, repo, pst := server.InitServer(), repository.InitRepository(), repository.InitPersistence()
 	c.SetServices(srv, repo, log.InitService(), pst)
 	c.Start()
+	if srv.TLSCertFile != "cert.pem" || srv.TLSKeyFile != "key.pem" {
+		t.Fatal("TLS paths were not applied")
+	}
 	if srv.CORSAllowedOrigin != "https://app.example.com" {
 		t.Fatal("custom CORS origin was not applied")
 	}

@@ -10,6 +10,8 @@ import (
 )
 
 type ConfigService struct {
+	TLSCertFile       string `json:"tlsCertFile,omitempty"`
+	TLSKeyFile        string `json:"tlsKeyFile,omitempty"`
 	LocalhostOnly     bool   `json:"localHostOnly"`
 	ServerPort        uint32 `json:"serverPort"`
 	AdminToken        string `json:"adminToken"`
@@ -35,6 +37,8 @@ func (c *ConfigService) applyInitialToServer() {
 	} else {
 		c.srv.Server.Addr = fmt.Sprintf("0.0.0.0:%d", c.ServerPort)
 	}
+	c.srv.TLSCertFile = c.TLSCertFile
+	c.srv.TLSKeyFile = c.TLSKeyFile
 	c.srv.AccessTk = c.AdminToken
 	c.srv.ClientIPHeader = c.ClientIPHeader
 	c.srv.CORSAllowedOrigin = c.CORSAllowedOrigin
