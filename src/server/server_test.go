@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -68,10 +69,10 @@ func TestEndpointsWithoutRepository(t *testing.T) {
 		url    string
 	}{
 		{http.MethodPost, "/enter"},
-		{http.MethodGet, "/position?key=abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ab"},
+		{http.MethodGet, "/position?key=" + strings.Repeat("a", int(repository.KEY_SIZE))},
 		{http.MethodGet, "/admin/finishItems"},
-		{http.MethodGet, "/admin/finishedItem/abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ab"},
-		{http.MethodDelete, "/admin/finishedItem/abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ab"},
+		{http.MethodGet, "/admin/finishedItem/" + strings.Repeat("a", int(repository.KEY_SIZE))},
+		{http.MethodDelete, "/admin/finishedItem/" + strings.Repeat("a", int(repository.KEY_SIZE))},
 		{http.MethodDelete, "/admin/clearFinished"},
 		{http.MethodDelete, "/admin/clearQueue"},
 	}
@@ -136,7 +137,7 @@ func TestHandlePositionInvalidKey(t *testing.T) {
 
 func TestHandlePositionNotFound(t *testing.T) {
 	s := newTestServer()
-	unknownKey := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ab"
+	unknownKey := strings.Repeat("a", int(repository.KEY_SIZE))
 
 	req := httptest.NewRequest(http.MethodGet, "/position?key="+unknownKey, nil)
 	rec := httptest.NewRecorder()
@@ -253,7 +254,7 @@ func TestHandleAdminGetFinished(t *testing.T) {
 func TestHandleAdminGetFinishedNotFound(t *testing.T) {
 	s := newTestServer()
 	s.SetAdminAcessToken("admin_testing_token")
-	unknownKey := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ab"
+	unknownKey := strings.Repeat("a", int(repository.KEY_SIZE))
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/finishedItem/"+unknownKey, nil)
 	req.Header.Set("authorization", "admin_testing_token")

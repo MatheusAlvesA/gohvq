@@ -9,7 +9,8 @@ import (
 	"time"
 )
 
-const KEY_SIZE uint = 64
+// KEY_SIZE defines the key length used by generation, validation, and persistence.
+const KEY_SIZE uint = 20
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 type Repository struct {

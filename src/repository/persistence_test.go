@@ -96,10 +96,10 @@ func TestPersistenceClearOrdersPendingActions(t *testing.T) {
 }
 
 func TestPersistenceRecoversPartialTail(t *testing.T) {
-	for _, tail := range []string{"A", "A " + strings.Repeat("d", 64)} {
+	for _, tail := range []string{"A", "A " + strings.Repeat("d", int(KEY_SIZE))} {
 		t.Run(strconv.Itoa(len(tail)), func(t *testing.T) {
 			t.Chdir(t.TempDir())
-			deleted, queued, finished := strings.Repeat("a", 64), strings.Repeat("b", 64), strings.Repeat("c", 64)
+			deleted, queued, finished := strings.Repeat("a", int(KEY_SIZE)), strings.Repeat("b", int(KEY_SIZE)), strings.Repeat("c", int(KEY_SIZE))
 			data := "X " + deleted + "\nA " + queued + "\nF " + finished + "\n" + tail
 			if err := os.WriteFile(PERSISTENCE_DB_FILE, []byte(data), 0600); err != nil {
 				t.Fatal(err)
@@ -130,7 +130,7 @@ func TestPersistenceRecoversPartialTail(t *testing.T) {
 
 func TestPersistenceRejectsInvalidRecordWithoutPartialRestore(t *testing.T) {
 	t.Chdir(t.TempDir())
-	data := "A " + strings.Repeat("a", 64) + "\n? " + strings.Repeat("b", 64) + "\n"
+	data := "A " + strings.Repeat("a", int(KEY_SIZE)) + "\n? " + strings.Repeat("b", int(KEY_SIZE)) + "\n"
 	if err := os.WriteFile(PERSISTENCE_DB_FILE, []byte(data), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestPersistenceOpenFailureDoesNotBlockRepository(t *testing.T) {
 	r.Persistence = InitPersistence()
 	r.Persistence.Start(r)
 	defer r.Persistence.Stop()
-	key := strings.Repeat("a", 64)
+	key := strings.Repeat("a", int(KEY_SIZE))
 	for range PERSISTENCE_ACTIONS_BUFFER_SIZE + 1 {
 		r.Persistence.AddItem(key)
 	}
@@ -190,13 +190,13 @@ func TestPersistenceWriteFailureReleasesProducers(t *testing.T) {
 		p.mutex.Unlock()
 		t.Fatal(err)
 	}
-	p.AddItem(strings.Repeat("a", 64))
+	p.AddItem(strings.Repeat("a", int(KEY_SIZE)))
 	var wg sync.WaitGroup
 	for range 20 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			p.FinishItem(strings.Repeat("a", 64))
+			p.FinishItem(strings.Repeat("a", int(KEY_SIZE)))
 			p.ClearAllNotFinished()
 			p.ClearAllFinished()
 		}()
@@ -217,7 +217,7 @@ func TestPersistenceWriteFailureReleasesProducers(t *testing.T) {
 
 func TestDisabledPersistenceDoesNotTouchDisk(t *testing.T) {
 	t.Chdir(t.TempDir())
-	data := "A " + strings.Repeat("a", 64) + "\n"
+	data := "A " + strings.Repeat("a", int(KEY_SIZE)) + "\n"
 	if err := os.WriteFile(PERSISTENCE_DB_FILE, []byte(data), 0600); err != nil {
 		t.Fatal(err)
 	}

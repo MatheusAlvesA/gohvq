@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -33,17 +34,16 @@ func TestGenerateRandomKeyUniqueness(t *testing.T) {
 }
 
 func TestIsValidKey(t *testing.T) {
-	valid := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ab"
+	valid := strings.Repeat("a", int(KEY_SIZE))
 	if !IsValidKey(valid) {
 		t.Errorf("Key should be valid: %q", valid)
 	}
 
 	invalidCases := []string{
 		"",
-		"short",
-		"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ab!", // invalid char
-		"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789a",   // too short
-		"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abc", // too long
+		strings.Repeat("a", int(KEY_SIZE)-1) + "!", // invalid char
+		strings.Repeat("a", int(KEY_SIZE)-1),       // too short
+		strings.Repeat("a", int(KEY_SIZE)+1),       // too long
 	}
 	for _, key := range invalidCases {
 		if IsValidKey(key) {
@@ -283,7 +283,7 @@ func BenchmarkGenerateRandomKey(b *testing.B) {
 }
 
 func BenchmarkIsValidKey(b *testing.B) {
-	key := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ab"
+	key := strings.Repeat("a", int(KEY_SIZE))
 
 	for b.Loop() {
 		IsValidKey(key)

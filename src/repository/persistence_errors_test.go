@@ -29,7 +29,7 @@ func TestPersistenceFailedMutationsPreserveIndex(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer p.Stop()
-			key := strings.Repeat("a", 64)
+			key := strings.Repeat("a", int(KEY_SIZE))
 			if err := p.applyAction(&PersistanceAction{ActionType: PersistenceAdd, Key: key}); err != nil {
 				t.Fatal(err)
 			}
@@ -45,7 +45,7 @@ func TestPersistenceFailedMutationsPreserveIndex(t *testing.T) {
 			}
 			actionKey := key
 			if operation.action == PersistenceAdd {
-				actionKey = strings.Repeat("b", 64)
+				actionKey = strings.Repeat("b", int(KEY_SIZE))
 			}
 			err = p.applyAction(&PersistanceAction{ActionType: operation.action, Key: actionKey})
 			if err == nil {
@@ -63,7 +63,7 @@ func TestPersistenceFailedMutationsPreserveIndex(t *testing.T) {
 
 func TestPersistenceCompactionCreationFailurePreservesDatabase(t *testing.T) {
 	t.Chdir(t.TempDir())
-	data := "A " + strings.Repeat("a", 64) + "\n"
+	data := "A " + strings.Repeat("a", int(KEY_SIZE)) + "\n"
 	if err := os.WriteFile(PERSISTENCE_DB_FILE, []byte(data), 0600); err != nil {
 		t.Fatal(err)
 	}
