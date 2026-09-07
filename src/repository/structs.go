@@ -63,7 +63,11 @@ type PersistenceItem struct {
 func (h *QueueHead) AddItem(item *QueueItem) {
 	item.Next = nil
 	item.Previus = nil
-	item.Position = h.Length.Load()
+	if h.LastItem == nil {
+		item.Position = 0
+	} else {
+		item.Position = h.LastItem.Position + 1
+	}
 	h.Length.Add(1)
 	if h.FirstItem == nil {
 		h.FirstItem = item

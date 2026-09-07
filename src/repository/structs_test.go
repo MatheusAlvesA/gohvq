@@ -150,3 +150,33 @@ func BenchmarkAddItemToHead(b *testing.B) {
 		})
 	}
 }
+
+func TestAddItemAfterRemovalPreservesIncreasingPositions(t *testing.T) {
+	head := QueueHead{}
+	for range 5 {
+		head.AddItem(&QueueItem{})
+	}
+	head.PopItem()
+	head.PopItem()
+	// Remaining positions are 2, 3, 4, while the queue length is only 3.
+	added := &QueueItem{}
+	head.AddItem(added)
+	if added.Position != 5 {
+		t.Fatalf("expected position 5 after stale tail position 4, got %d", added.Position)
+	}
+	if head.Length.Load() != 4 {
+		t.Fatalf("expected queue length 4, got %d", head.Length.Load())
+	}
+	for item := head.FirstItem; item.Next != nil; item = item.Next {
+		if item.Position >= item.Next.Position {
+			t.Fatalf("positions are not increasing: %d followed by %d", item.Position, item.Next.Position)
+		}
+	}
+	for head.PopItem() != nil {
+	}
+	// Even a reused ticket must start at zero when the queue is empty.
+	head.AddItem(added)
+	if added.Position != 0 {
+		t.Fatalf("expected position 0 in an empty queue, got %d", added.Position)
+	}
+}

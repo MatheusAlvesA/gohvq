@@ -211,25 +211,38 @@ func (r *Repository) clearIfDue() {
 	}
 }
 
-func (r *Repository) doClear() {
+func (r *Repository) doClear() cleanupStats {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.doClearLocked()
+	return r.doClearLocked()
 }
 
-func (r *Repository) doClearLocked() {
+// cleanupStats counts completed work, excluding the ticket that observes timeout.
+type cleanupStats struct {
+	processed uint64
+	removed   uint64
+	timedOut  bool
+}
+
+func (r *Repository) doClearLocked() (stats cleanupStats) {
 	// Even a scan that exhausts its time budget must respect ClearFrequency.
-	defer func() { r.lastClear = time.Now().Unix() }()
+	initialSize := r.Head.Length.Load()
+	var currentPosition uint64
+	defer func() {
+		r.lastClear = time.Now().Unix()
+		stats.removed = initialSize - r.Head.Length.Load()
+		stats.processed = currentPosition + stats.removed
+	}()
 	now := time.Now().Unix()
 
 	currentItem := r.Head.FirstItem
 	timeout := time.NewTimer(time.Duration(r.ClearMaxTime) * time.Second)
 	defer timeout.Stop()
-	var currentPosition uint64 = 0
 	for currentItem != nil {
 		currentItem.Position = currentPosition
 		select {
 		case <-timeout.C:
+			stats.timedOut = true
 			r.Log(log.Error, "Cloud not fully clean the queue in time")
 			return
 		default:
@@ -246,6 +259,7 @@ func (r *Repository) doClearLocked() {
 			currentItem = tmpNext
 		}
 	}
+	return
 }
 
 func (r *Repository) Log(logType string, message string) {
