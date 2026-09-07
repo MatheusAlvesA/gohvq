@@ -18,11 +18,12 @@ import (
 )
 
 type Server struct {
-	Server         *http.Server
-	repo           *repository.Repository
-	log            *log.LogService
-	AccessTk       string
-	ClientIPHeader string
+	Server            *http.Server
+	repo              *repository.Repository
+	log               *log.LogService
+	AccessTk          string
+	ClientIPHeader    string
+	CORSAllowedOrigin string
 }
 
 func (s *Server) CheckAdminToken(token string) bool {
@@ -326,6 +327,24 @@ func (s *Server) SetLogService(logService *log.LogService) {
 	s.log = logService
 }
 
+// allowCORS permits credentialed access from the configured origin on every route.
+// Handlers still enforce administrator authorization.
+func (s *Server) allowCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.CORSAllowedOrigin != "" && s.CORSAllowedOrigin != "*" {
+			w.Header().Set("Access-Control-Allow-Origin", s.CORSAllowedOrigin)
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+		}
+		if r.Method == http.MethodOptions {
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func InitServer() *Server {
 	mux := http.NewServeMux()
 	s := &Server{
@@ -334,6 +353,8 @@ func InitServer() *Server {
 			Handler: mux,
 		},
 	}
+
+	s.Server.Handler = s.allowCORS(mux)
 
 	mux.Handle("POST /enter", s.requireClientIPHeader(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handleEnter(s, w, r)

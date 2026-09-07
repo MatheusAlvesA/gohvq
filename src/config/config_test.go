@@ -15,6 +15,8 @@ func TestDefaultConfigAppliedToServices(t *testing.T) {
 		write bool
 	}{
 		{name: "missing"},
+		{name: "invalid origin type", data: `{"corsAllowedOrigin":123}`, write: true},
+		{name: "invalid after origin", data: `{"corsAllowedOrigin":"https://app.example.com","pingTimeout":"invalid"}`, write: true},
 		{name: "invalid header type", data: `{"clientIPHeader":123}`, write: true},
 		{name: "invalid after header", data: `{"clientIPHeader":"X-Real-IP","pingTimeout":"invalid"}`, write: true},
 		{name: "negative IP limit", data: `{"maxEntriesPerIP":-1}`, write: true},
@@ -41,6 +43,9 @@ func TestDefaultConfigAppliedToServices(t *testing.T) {
 			srv, repo, pst := server.InitServer(), repository.InitRepository(), repository.InitPersistence()
 			c.SetServices(srv, repo, log.InitService(), pst)
 			c.Start()
+			if srv.CORSAllowedOrigin != "" || c.CORSAllowedOrigin != "" {
+				t.Fatal("default CORS origin was not preserved")
+			}
 			if srv.ClientIPHeader != "" {
 				t.Fatal("default client IP header was not preserved")
 			}
@@ -64,6 +69,7 @@ func TestCustomConfigAppliedToServices(t *testing.T) {
 		"serverPort": 8181,
 		"adminToken": "custom_admin_token",
 		"clientIPHeader": "X-Real-IP",
+		"corsAllowedOrigin": "https://app.example.com",
 		"persistenceEnabled": false,
 		"clearMaxSeconds": 3,
 		"pingTimeout": 120,
@@ -77,6 +83,9 @@ func TestCustomConfigAppliedToServices(t *testing.T) {
 	srv, repo, pst := server.InitServer(), repository.InitRepository(), repository.InitPersistence()
 	c.SetServices(srv, repo, log.InitService(), pst)
 	c.Start()
+	if srv.CORSAllowedOrigin != "https://app.example.com" {
+		t.Fatal("custom CORS origin was not applied")
+	}
 	if srv.ClientIPHeader != "X-Real-IP" {
 		t.Fatal("custom client IP header was not applied")
 	}

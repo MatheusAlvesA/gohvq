@@ -10,10 +10,11 @@ import (
 )
 
 type ConfigService struct {
-	LocalhostOnly  bool   `json:"localHostOnly"`
-	ServerPort     uint32 `json:"serverPort"`
-	AdminToken     string `json:"adminToken"`
-	ClientIPHeader string `json:"clientIPHeader,omitempty"`
+	LocalhostOnly     bool   `json:"localHostOnly"`
+	ServerPort        uint32 `json:"serverPort"`
+	AdminToken        string `json:"adminToken"`
+	ClientIPHeader    string `json:"clientIPHeader,omitempty"`
+	CORSAllowedOrigin string `json:"corsAllowedOrigin,omitempty"`
 
 	PersistenceEnabled bool `json:"persistenceEnabled,omitempty"`
 
@@ -36,6 +37,7 @@ func (c *ConfigService) applyInitialToServer() {
 	}
 	c.srv.AccessTk = c.AdminToken
 	c.srv.ClientIPHeader = c.ClientIPHeader
+	c.srv.CORSAllowedOrigin = c.CORSAllowedOrigin
 }
 
 func (c *ConfigService) applyInitialToRepository() {
