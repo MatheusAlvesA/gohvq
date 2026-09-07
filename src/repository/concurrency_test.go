@@ -9,8 +9,8 @@ import (
 
 func TestSnapshotsRemainStableAfterQueueChanges(t *testing.T) {
 	r := InitRepository()
-	first, _ := r.CreateItem()
-	second, _ := r.CreateItem()
+	first, _ := r.CreateItem("")
+	second, _ := r.CreateItem("")
 	position := r.GetAndPingItemByKey(second.Key)
 	r.FinishItems(1)
 	r.doClear()
@@ -32,7 +32,7 @@ func TestSnapshotsRemainStableAfterQueueChanges(t *testing.T) {
 
 func TestConcurrentPositionSnapshotsAndCleanup(t *testing.T) {
 	r := InitRepository()
-	item, _ := r.CreateItem()
+	item, _ := r.CreateItem("")
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
@@ -61,7 +61,7 @@ func TestConcurrentSizeQueriesAndClear(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for range 1000 {
-			r.CreateItem()
+			r.CreateItem("")
 			r.ClearQueue()
 		}
 	}()
@@ -85,7 +85,7 @@ func TestCleanupRespectsFrequency(t *testing.T) {
 		r := InitRepository()
 		r.ClearFrequency = 10
 		r.PingTimeout = 1
-		r.CreateItem()
+		r.CreateItem("")
 		r.Start()
 		defer r.Stop()
 		time.Sleep(500 * time.Millisecond)
@@ -108,7 +108,7 @@ func TestCleanupTimeoutRespectsFrequency(t *testing.T) {
 		r := InitRepository()
 		r.ClearFrequency = 10
 		r.ClearMaxTime = 0
-		item, _ := r.CreateItem()
+		item, _ := r.CreateItem("")
 		r.ItemMap[item.Key].LastPing.Store(time.Now().Unix() - 100)
 		r.doClear() // Immediately exhaust the time budget.
 		r.ClearMaxTime = 1

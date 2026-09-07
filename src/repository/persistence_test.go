@@ -34,13 +34,13 @@ func persistenceContents(t *testing.T) string {
 func TestPersistenceFinishSurvivesRestart(t *testing.T) {
 	t.Chdir(t.TempDir())
 	r := startPersistentRepository(t)
-	item, err := r.CreateItem()
+	item, err := r.CreateItem("")
 	if err != nil {
 		t.Fatal(err)
 	}
 	r.FinishItems(1)
 	r.Persistence.Stop() // Must drain both add and finish, without sleeps.
-	if got := persistenceContents(t); got != "F "+item.Key+"\n" {
+	if got := persistenceContents(t); got != record("F", item.Key) {
 		t.Fatalf("finished record not saved: %q", got)
 	}
 
@@ -50,7 +50,7 @@ func TestPersistenceFinishSurvivesRestart(t *testing.T) {
 	}
 	restored.DeleteFinished(item.Key)
 	restored.Persistence.Stop()
-	if got := persistenceContents(t); got != "X "+item.Key+"\n" {
+	if got := persistenceContents(t); got != record("X", item.Key) {
 		t.Fatalf("restored finished item was not deleted: %q", got)
 	}
 }
@@ -70,9 +70,9 @@ func TestPersistenceClearOrdersPendingActions(t *testing.T) {
 			func() {
 				r.Persistence.mutex.Lock()
 				defer r.Persistence.mutex.Unlock()
-				first, _ := r.CreateItem()
+				first, _ := r.CreateItem("")
 				r.FinishItems(1)
-				second, _ := r.CreateItem()
+				second, _ := r.CreateItem("")
 				if finished {
 					r.ClearFinished()
 					r.FinishItems(1) // A later finish must survive the clear.
@@ -81,7 +81,7 @@ func TestPersistenceClearOrdersPendingActions(t *testing.T) {
 					r.ClearQueue()
 					keepFinished = first
 				}
-				keepQueue, _ = r.CreateItem() // A later add must also survive.
+				keepQueue, _ = r.CreateItem("") // A later add must also survive.
 			}()
 			r.Persistence.Stop()
 			restored := startPersistentRepository(t)
@@ -100,7 +100,7 @@ func TestPersistenceRecoversPartialTail(t *testing.T) {
 		t.Run(strconv.Itoa(len(tail)), func(t *testing.T) {
 			t.Chdir(t.TempDir())
 			deleted, queued, finished := strings.Repeat("a", int(KEY_SIZE)), strings.Repeat("b", int(KEY_SIZE)), strings.Repeat("c", int(KEY_SIZE))
-			data := "X " + deleted + "\nA " + queued + "\nF " + finished + "\n" + tail
+			data := record("X", deleted) + record("A", queued) + record("F", finished) + tail
 			if err := os.WriteFile(PERSISTENCE_DB_FILE, []byte(data), 0600); err != nil {
 				t.Fatal(err)
 			}
@@ -108,14 +108,14 @@ func TestPersistenceRecoversPartialTail(t *testing.T) {
 			if r.GetCurrentQueueSize() != 1 || r.Head.FirstItem.Key != queued || r.GetFinished(finished) == nil {
 				t.Fatal("valid records preceding the partial tail were not restored")
 			}
-			if got := persistenceContents(t); got != "A "+queued+"\nF "+finished+"\n" {
+			if got := persistenceContents(t); got != record("A", queued)+record("F", finished) {
 				t.Fatalf("partial tail or tombstone survived compaction: %q", got)
 			}
 			r.DeleteFinished(finished)
 			r.FinishItems(1)
-			added, _ := r.CreateItem()
+			added, _ := r.CreateItem("")
 			r.Persistence.Stop()
-			want := "F " + queued + "\nX " + finished + "\nA " + added.Key + "\n"
+			want := record("F", queued) + record("X", finished) + record("A", added.Key)
 			if got := persistenceContents(t); got != want {
 				t.Fatalf("writes used incorrect offsets after recovery:\n got %q\nwant %q", got, want)
 			}
@@ -130,7 +130,7 @@ func TestPersistenceRecoversPartialTail(t *testing.T) {
 
 func TestPersistenceRejectsInvalidRecordWithoutPartialRestore(t *testing.T) {
 	t.Chdir(t.TempDir())
-	data := "A " + strings.Repeat("a", int(KEY_SIZE)) + "\n? " + strings.Repeat("b", int(KEY_SIZE)) + "\n"
+	data := record("A", strings.Repeat("a", int(KEY_SIZE))) + record("?", strings.Repeat("b", int(KEY_SIZE)))
 	if err := os.WriteFile(PERSISTENCE_DB_FILE, []byte(data), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -157,9 +157,9 @@ func TestPersistenceOpenFailureDoesNotBlockRepository(t *testing.T) {
 	defer r.Persistence.Stop()
 	key := strings.Repeat("a", int(KEY_SIZE))
 	for range PERSISTENCE_ACTIONS_BUFFER_SIZE + 1 {
-		r.Persistence.AddItem(key)
+		r.Persistence.AddItem(key, "")
 	}
-	r.RegenerateQueueItem(key)
+	r.RegenerateQueueItem(key, "")
 	done := make(chan struct{})
 	go func() {
 		r.FinishItems(1)
@@ -190,7 +190,7 @@ func TestPersistenceWriteFailureReleasesProducers(t *testing.T) {
 		p.mutex.Unlock()
 		t.Fatal(err)
 	}
-	p.AddItem(strings.Repeat("a", int(KEY_SIZE)))
+	p.AddItem(strings.Repeat("a", int(KEY_SIZE)), "")
 	var wg sync.WaitGroup
 	for range 20 {
 		wg.Add(1)
@@ -225,7 +225,7 @@ func TestDisabledPersistenceDoesNotTouchDisk(t *testing.T) {
 	r.Persistence = InitPersistence()
 	r.Persistence.Enabled = false
 	r.Persistence.Start(r)
-	r.CreateItem()
+	r.CreateItem("")
 	r.FinishItems(1)
 	r.ClearQueue()
 	r.ClearFinished()
@@ -240,8 +240,8 @@ func TestPersistenceConcurrentClearsAndWrites(t *testing.T) {
 	r := startPersistentRepository(t)
 	var wg sync.WaitGroup
 	for _, work := range []func(){
-		func() { r.CreateItem(); r.FinishItems(1) },
-		func() { r.CreateItem() },
+		func() { r.CreateItem(""); r.FinishItems(1) },
+		func() { r.CreateItem("") },
 		r.ClearQueue,
 		r.ClearFinished,
 	} {
@@ -280,4 +280,8 @@ func TestPersistenceConcurrentClearsAndWrites(t *testing.T) {
 			t.Fatal("restored finished items differ from memory")
 		}
 	}
+}
+
+func record(status, key string) string {
+	return status + " " + key + strings.Repeat(" ", 1+PERSISTENCE_IP_SIZE) + "\n"
 }

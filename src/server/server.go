@@ -8,6 +8,7 @@ import (
 	"crypto/subtle"
 	"encoding/json/v2"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"time"
@@ -41,14 +42,20 @@ func (s *Server) SetAdminAcessToken(token string) bool {
 	return true
 }
 
-func handleEnter(s *Server, w http.ResponseWriter, _ *http.Request) {
+func handleEnter(s *Server, w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if s.repo == nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.MarshalWrite(w, map[string]string{"message": "Repository not set"})
 		return
 	}
-	item, err := s.repo.CreateItem()
+	addr, err := netip.ParseAddrPort(r.RemoteAddr)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.MarshalWrite(w, map[string]string{"message": "Invalid client address"})
+		return
+	}
+	item, err := s.repo.CreateItem(addr.Addr().WithZone("").Unmap().String())
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.MarshalWrite(w, map[string]string{"message": "Fail to create new item"})
@@ -128,6 +135,7 @@ func handleAdminFinish(s *Server, w http.ResponseWriter, r *http.Request) {
 		resList = append(resList, map[string]any{
 			"key":       item.Key,
 			"createdAt": item.CreatedAt,
+			"ip":        item.IP,
 		})
 	}
 
@@ -229,7 +237,7 @@ func handleAdminGetFinished(s *Server, w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
-	json.MarshalWrite(w, map[string]any{"key": item.Key, "createdAt": item.CreatedAt})
+	json.MarshalWrite(w, map[string]any{"key": item.Key, "createdAt": item.CreatedAt, "ip": item.IP})
 }
 
 func (s *Server) Log(logType string, message string) {

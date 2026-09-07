@@ -74,7 +74,7 @@ func TestCleanupStats(t *testing.T) {
 			r := InitRepository()
 			r.ClearMaxTime = budget
 			for _, expired := range []bool{false, true, false, true} {
-				item, err := r.CreateItem()
+				item, err := r.CreateItem("")
 				if err != nil {
 					t.Fatal(err)
 				}

@@ -18,6 +18,7 @@ type QueueHead struct {
 
 type QueueItem struct {
 	Key        string
+	IP         string
 	CreatedAt  int64
 	LastPing   atomic.Int64
 	Position   uint64
@@ -30,6 +31,7 @@ type QueueItem struct {
 // expose the mutable queue node or copy its atomic fields.
 type ItemSnapshot struct {
 	Key        string
+	IP         string
 	CreatedAt  int64
 	LastPing   int64
 	Position   uint64
@@ -42,6 +44,7 @@ func (i *QueueItem) snapshot() *ItemSnapshot {
 	}
 	return &ItemSnapshot{
 		Key:        i.Key,
+		IP:         i.IP,
 		CreatedAt:  i.CreatedAt,
 		LastPing:   i.LastPing.Load(),
 		Position:   i.Position,
@@ -52,10 +55,12 @@ func (i *QueueItem) snapshot() *ItemSnapshot {
 type PersistanceAction struct {
 	ActionType int
 	Key        string
+	IP         string
 }
 
 type PersistenceItem struct {
 	Key      string
+	IP       string
 	Index    uint64
 	Finished bool
 }

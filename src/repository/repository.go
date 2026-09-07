@@ -4,6 +4,7 @@ import (
 	"MatheusAlvesA/gohvq/src/log"
 	"crypto/rand"
 	"math/big"
+	"net/netip"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -59,7 +60,14 @@ func IsValidKey(key string) bool {
 	return true
 }
 
-func (r *Repository) CreateItem() (*ItemSnapshot, error) {
+func (r *Repository) CreateItem(ip string) (*ItemSnapshot, error) {
+	if ip != "" {
+		addr, err := netip.ParseAddr(ip)
+		if err != nil {
+			return nil, err
+		}
+		ip = addr.WithZone("").Unmap().String()
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	selectedKey := ""
@@ -73,30 +81,33 @@ func (r *Repository) CreateItem() (*ItemSnapshot, error) {
 
 	newItem := new(QueueItem)
 	newItem.Key = selectedKey
+	newItem.IP = ip
 	newItem.CreatedAt = time.Now().Unix()
 	newItem.LastPing.Store(time.Now().Unix())
 	r.Head.AddItem(newItem)
 	r.ItemMap[selectedKey] = newItem
 
-	r.Persistence.AddItem(selectedKey)
+	r.Persistence.AddItem(selectedKey, ip)
 	return newItem.snapshot(), nil
 }
 
-func (r *Repository) RegenerateQueueItem(key string) {
+func (r *Repository) RegenerateQueueItem(key, ip string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	newItem := new(QueueItem)
 	newItem.Key = key
+	newItem.IP = ip
 	newItem.CreatedAt = time.Now().Unix()
 	newItem.LastPing.Store(time.Now().Unix())
 	r.Head.AddItem(newItem)
 	r.ItemMap[key] = newItem
 }
-func (r *Repository) RegenerateFinishedItem(key string) {
+func (r *Repository) RegenerateFinishedItem(key, ip string) {
 	r.muFinished.Lock()
 	defer r.muFinished.Unlock()
 	newItem := new(QueueItem)
 	newItem.Key = key
+	newItem.IP = ip
 	newItem.CreatedAt = time.Now().Unix()
 	newItem.LastPing.Store(newItem.CreatedAt)
 	newItem.FinishedAt = newItem.CreatedAt

@@ -80,7 +80,8 @@ JSON or field types must not partially change settings; omitted fields retain
 their defaults.
 
 Persistence uses `gohvq_persistence.db` in the working directory. Records have a
-fixed size derived from `KEY_SIZE`, with a status byte, space, key, and newline.
+fixed size derived from `KEY_SIZE`, with a status byte, space, key, space, a 45-byte right-padded IP field, and
+newline. See `src/repository/PERSISTENCE.md` for format compatibility.
 Changing key length changes the disk format and API validation. Existing files
 with a different key size require an explicit compatibility or migration plan;
 never silently truncate keys or overwrite the developer's database.

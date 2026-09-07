@@ -55,7 +55,7 @@ func TestIsValidKey(t *testing.T) {
 func TestCreateItem(t *testing.T) {
 	repo := InitRepository()
 
-	item, err := repo.CreateItem()
+	item, err := repo.CreateItem("")
 	if err != nil {
 		t.Fatalf("Error creating item %q", err)
 	}
@@ -72,7 +72,7 @@ func TestCreateItem(t *testing.T) {
 		t.Errorf("Incorrect queue size, expected 1 got %d", repo.GetCurrentQueueSize())
 	}
 
-	second, err := repo.CreateItem()
+	second, err := repo.CreateItem("")
 	if err != nil {
 		t.Fatalf("Error creating item %q", err)
 	}
@@ -89,8 +89,8 @@ func TestCreateItem(t *testing.T) {
 
 func TestClearQueue(t *testing.T) {
 	repo := InitRepository()
-	repo.CreateItem()
-	repo.CreateItem()
+	repo.CreateItem("")
+	repo.CreateItem("")
 
 	repo.ClearQueue()
 
@@ -107,9 +107,9 @@ func TestClearQueue(t *testing.T) {
 
 func TestFinishItems(t *testing.T) {
 	repo := InitRepository()
-	item1, _ := repo.CreateItem()
-	item2, _ := repo.CreateItem()
-	item3, _ := repo.CreateItem()
+	item1, _ := repo.CreateItem("")
+	item2, _ := repo.CreateItem("")
+	item3, _ := repo.CreateItem("")
 
 	finished := repo.FinishItems(2)
 
@@ -147,7 +147,7 @@ func TestFinishItemsEdgeCases(t *testing.T) {
 		t.Errorf("FinishItems(0) should return empty list")
 	}
 
-	repo.CreateItem()
+	repo.CreateItem("")
 	finished = repo.FinishItems(5)
 	if len(finished) != 1 {
 		t.Errorf("Finishing more than available should return only existing items, got %d", len(finished))
@@ -164,7 +164,7 @@ func TestGetFinished(t *testing.T) {
 		t.Errorf("GetFinished on empty repo should return nil")
 	}
 
-	item, _ := repo.CreateItem()
+	item, _ := repo.CreateItem("")
 	repo.FinishItems(1)
 
 	if got := repo.GetFinished(item.Key); got == nil || got.Key != item.Key {
@@ -179,7 +179,7 @@ func TestDeleteFinished(t *testing.T) {
 		t.Errorf("DeleteFinished on empty repo should return nil")
 	}
 
-	item, _ := repo.CreateItem()
+	item, _ := repo.CreateItem("")
 	repo.FinishItems(1)
 
 	deleted := repo.DeleteFinished(item.Key)
@@ -196,8 +196,8 @@ func TestDeleteFinished(t *testing.T) {
 
 func TestClearFinished(t *testing.T) {
 	repo := InitRepository()
-	repo.CreateItem()
-	repo.CreateItem()
+	repo.CreateItem("")
+	repo.CreateItem("")
 	repo.FinishItems(2)
 
 	repo.ClearFinished()
@@ -214,7 +214,7 @@ func TestGetAndPingItemByKey(t *testing.T) {
 		t.Errorf("Get on empty repo should return nil")
 	}
 
-	item, _ := repo.CreateItem()
+	item, _ := repo.CreateItem("")
 	repo.ItemMap[item.Key].LastPing.Store(time.Now().Unix() - 30)
 
 	got := repo.GetAndPingItemByKey(item.Key)
@@ -228,9 +228,9 @@ func TestGetAndPingItemByKey(t *testing.T) {
 
 func TestDoClear(t *testing.T) {
 	repo := InitRepository()
-	expired, _ := repo.CreateItem()
-	alive, _ := repo.CreateItem()
-	expired2, _ := repo.CreateItem()
+	expired, _ := repo.CreateItem("")
+	alive, _ := repo.CreateItem("")
+	expired2, _ := repo.CreateItem("")
 
 	repo.ItemMap[expired.Key].LastPing.Store(time.Now().Unix() - int64(repo.PingTimeout) - 1)
 	repo.ItemMap[expired2.Key].LastPing.Store(time.Now().Unix() - int64(repo.PingTimeout) - 1)
@@ -294,7 +294,7 @@ func BenchmarkCreateItem(b *testing.B) {
 	repo := InitRepository()
 
 	for b.Loop() {
-		_, err := repo.CreateItem()
+		_, err := repo.CreateItem("")
 		if err != nil {
 			b.Fatalf("Error creating item %q", err)
 		}
@@ -303,7 +303,7 @@ func BenchmarkCreateItem(b *testing.B) {
 
 func BenchmarkGetAndPingItemByKey(b *testing.B) {
 	repo := InitRepository()
-	item, _ := repo.CreateItem()
+	item, _ := repo.CreateItem("")
 
 	for b.Loop() {
 		repo.GetAndPingItemByKey(item.Key)
@@ -314,7 +314,7 @@ func BenchmarkFinishItems(b *testing.B) {
 	repo := InitRepository()
 
 	for b.Loop() {
-		repo.CreateItem()
+		repo.CreateItem("")
 		repo.FinishItems(1)
 	}
 }
@@ -322,7 +322,7 @@ func BenchmarkFinishItems(b *testing.B) {
 func BenchmarkDoClear(b *testing.B) {
 	repo := InitRepository()
 	for range 1000 {
-		repo.CreateItem()
+		repo.CreateItem("")
 	}
 
 	for b.Loop() {

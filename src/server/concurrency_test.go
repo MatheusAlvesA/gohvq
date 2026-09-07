@@ -33,7 +33,7 @@ func TestEnterReturnsPositionAtInsertion(t *testing.T) {
 					case "clear":
 						s.repo.ClearQueue()
 					case "enter":
-						s.repo.CreateItem()
+						s.repo.CreateItem("")
 					}
 				},
 			}
@@ -56,7 +56,7 @@ func TestConcurrentPositionAndFinish(t *testing.T) {
 	s := newTestServer()
 	var wg sync.WaitGroup
 	for range 500 {
-		item, err := s.repo.CreateItem()
+		item, err := s.repo.CreateItem("")
 		if err != nil {
 			t.Fatal(err)
 		}

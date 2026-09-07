@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net/netip"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -14,7 +16,8 @@ import (
 
 const PERSISTENCE_ACTIONS_BUFFER_SIZE = 10_000
 const PERSISTENCE_DB_FILE = "gohvq_persistence.db"
-const PERSISTANCE_DB_LINE_SIZE uint64 = uint64(KEY_SIZE) + 3 // "A " + key + "\n"
+const PERSISTENCE_IP_SIZE = 45
+const PERSISTANCE_DB_LINE_SIZE uint64 = uint64(KEY_SIZE) + 4 + PERSISTENCE_IP_SIZE // status + space + key + space + padded IP + newline
 
 type Persistence struct {
 	ItemMap map[string]*PersistenceItem
@@ -45,8 +48,11 @@ func (p *Persistence) SetLogService(logService *log.LogService) {
 	p.log = logService
 }
 
-func (p *Persistence) addToFile(key string) error {
-	_, err := p.dbFile.Write([]byte("A " + key + "\n"))
+func (p *Persistence) addToFile(key, ip string) error {
+	if !IsValidKey(key) || !validPersistenceIP(ip) {
+		return errors.New("invalid persistence key or IP")
+	}
+	_, err := p.dbFile.Write([]byte("A " + key + " " + ip + strings.Repeat(" ", PERSISTENCE_IP_SIZE-len(ip)) + "\n"))
 	return err
 }
 
@@ -103,9 +109,10 @@ func (p *Persistence) optimizeDataBase(repo *Repository) error {
 		if err != nil {
 			return fmt.Errorf("read persistence record: %w", err)
 		}
-		key := string(line[2 : len(line)-1])
+		key := string(line[2 : 2+int(KEY_SIZE)])
+		ip := strings.TrimRight(string(line[3+int(KEY_SIZE):len(line)-1]), " ")
 		if (line[0] != 'A' && line[0] != 'F' && line[0] != 'X') ||
-			line[1] != ' ' || line[len(line)-1] != '\n' || !IsValidKey(key) {
+			line[1] != ' ' || line[2+int(KEY_SIZE)] != ' ' || line[len(line)-1] != '\n' || !IsValidKey(key) || !validPersistenceIP(ip) {
 			return errors.New("invalid persistence record")
 		}
 		if line[0] == 'X' {
@@ -114,7 +121,7 @@ func (p *Persistence) optimizeDataBase(repo *Repository) error {
 		if _, err := optimizedFile.Write(line); err != nil {
 			return fmt.Errorf("write optimized persistence record: %w", err)
 		}
-		item := &PersistenceItem{Key: key, Index: newCounter, Finished: line[0] == 'F'}
+		item := &PersistenceItem{Key: key, IP: ip, Index: newCounter, Finished: line[0] == 'F'}
 		newItemMap[key] = item
 		if repo != nil {
 			restored = append(restored, item)
@@ -136,9 +143,9 @@ func (p *Persistence) optimizeDataBase(repo *Repository) error {
 	// Publish recovered queue nodes only after the entire file is accepted.
 	for _, item := range restored {
 		if item.Finished {
-			repo.RegenerateFinishedItem(item.Key)
+			repo.RegenerateFinishedItem(item.Key, item.IP)
 		} else {
-			repo.RegenerateQueueItem(item.Key)
+			repo.RegenerateQueueItem(item.Key, item.IP)
 		}
 	}
 	p.Log(log.Info, "Persistence database optimized")
@@ -153,10 +160,10 @@ func (p *Persistence) applyAction(action *PersistanceAction) error {
 	}
 	switch action.ActionType {
 	case PersistenceAdd:
-		if err := p.addToFile(action.Key); err != nil {
+		if err := p.addToFile(action.Key, action.IP); err != nil {
 			return err
 		}
-		p.ItemMap[action.Key] = &PersistenceItem{Key: action.Key, Index: p.counter}
+		p.ItemMap[action.Key] = &PersistenceItem{Key: action.Key, IP: action.IP, Index: p.counter}
 		p.counter++
 	case PersistenceRemove:
 		if err := p.removeFromFile(action.Key); err != nil {
@@ -293,8 +300,8 @@ func (p *Persistence) ClearAllFinished() {
 	p.enqueue(&PersistanceAction{ActionType: PersistenceClearFinished}, true)
 }
 
-func (p *Persistence) AddItem(key string) {
-	p.enqueue(&PersistanceAction{ActionType: PersistenceAdd, Key: key}, false)
+func (p *Persistence) AddItem(key, ip string) {
+	p.enqueue(&PersistanceAction{ActionType: PersistenceAdd, Key: key, IP: ip}, false)
 }
 
 func (p *Persistence) RemoveItem(key string) {
@@ -320,4 +327,13 @@ func InitPersistence() *Persistence {
 		stop:    make(chan struct{}),
 		done:    make(chan struct{}),
 	}
+}
+
+// Empty IPs represent tickets created without an address (for example imported records).
+func validPersistenceIP(ip string) bool {
+	if ip == "" {
+		return true
+	}
+	addr, err := netip.ParseAddr(ip)
+	return err == nil && addr.Zone() == "" && len(ip) <= PERSISTENCE_IP_SIZE
 }
