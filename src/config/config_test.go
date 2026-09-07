@@ -18,6 +18,9 @@ func TestDefaultConfigAppliedToServices(t *testing.T) {
 		{name: "empty", write: true},
 		{name: "invalid JSON", data: "not JSON", write: true},
 		{name: "empty object", data: "{}", write: true},
+		{name: "type error after persistence change", data: `{"persistenceEnabled":false,"serverPort":"invalid"}`, write: true},
+		{name: "type error after token and address change", data: `{"adminToken":"replacement_token","localHostOnly":true,"serverPort":8181,"pingTimeout":"invalid"}`, write: true},
+		{name: "syntax error after valid fields", data: `{"persistenceEnabled":false,"serverPort":8181,`, write: true},
 	} {
 		t.Run(configFile.name, func(t *testing.T) {
 			t.Chdir(t.TempDir())

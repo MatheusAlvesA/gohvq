@@ -32,7 +32,7 @@ func TestAdminTokenValidation(t *testing.T) {
 
 func TestAdminEndpointsRejectUnauthorizedRequests(t *testing.T) {
 	for _, endpoint := range []struct{ method, path string }{
-		{http.MethodGet, "/admin/finishItems"},
+		{http.MethodPost, "/admin/finishItems"},
 		{http.MethodGet, "/admin/finishedItem/"},
 		{http.MethodDelete, "/admin/finishedItem/"},
 		{http.MethodDelete, "/admin/clearFinished"},

@@ -8,6 +8,7 @@ import (
 	"crypto/subtle"
 	"encoding/json/v2"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 )
@@ -104,8 +105,19 @@ func handleAdminFinish(s *Server, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var nItems uint = 1
-	nParam, err := strconv.Atoi(r.URL.Query().Get("n"))
-	if err == nil && nParam > 0 {
+	query, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.MarshalWrite(w, map[string]string{"message": "Invalid query parameters"})
+		return
+	}
+	if values, present := query["n"]; present {
+		nParam, err := strconv.Atoi(values[0])
+		if len(values) != 1 || err != nil || nParam <= 0 {
+			w.WriteHeader(http.StatusBadRequest)
+			json.MarshalWrite(w, map[string]string{"message": "n must be a positive integer"})
+			return
+		}
 		nItems = uint(nParam)
 	}
 
@@ -277,7 +289,7 @@ func InitServer() *Server {
 	mux.HandleFunc("GET /position", func(w http.ResponseWriter, r *http.Request) {
 		handlePosition(s, w, r)
 	})
-	mux.HandleFunc("GET /admin/finishItems", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /admin/finishItems", func(w http.ResponseWriter, r *http.Request) {
 		handleAdminFinish(s, w, r)
 	})
 	mux.HandleFunc("GET /admin/finishedItem/{key}", func(w http.ResponseWriter, r *http.Request) {

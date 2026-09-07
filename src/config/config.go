@@ -95,10 +95,13 @@ func (c *ConfigService) loadConfig() {
 	}
 
 	oldTk := c.AdminToken
-	err := json.Unmarshal(bytes, c)
+	candidate := *c
+	err := json.Unmarshal(bytes, &candidate)
 	if err != nil {
 		c.Log(log.Error, fmt.Sprintf("Failed to unmarshal config JSON: %s", err))
 		c.Log(log.Warning, "Using default config")
+	} else {
+		*c = candidate
 	}
 	if oldTk == c.AdminToken {
 		c.Log(log.Warning, "Generated admin token: "+c.AdminToken)

@@ -70,7 +70,7 @@ func TestEndpointsWithoutRepository(t *testing.T) {
 	}{
 		{http.MethodPost, "/enter"},
 		{http.MethodGet, "/position?key=" + strings.Repeat("a", int(repository.KEY_SIZE))},
-		{http.MethodGet, "/admin/finishItems"},
+		{http.MethodPost, "/admin/finishItems"},
 		{http.MethodGet, "/admin/finishedItem/" + strings.Repeat("a", int(repository.KEY_SIZE))},
 		{http.MethodDelete, "/admin/finishedItem/" + strings.Repeat("a", int(repository.KEY_SIZE))},
 		{http.MethodDelete, "/admin/clearFinished"},
@@ -153,7 +153,7 @@ func TestHandlePositionFinishedItem(t *testing.T) {
 	s.SetAdminAcessToken("admin_testing_token")
 	key := newValidKey(t, s)
 
-	req := httptest.NewRequest(http.MethodGet, "/admin/finishItems", nil)
+	req := httptest.NewRequest(http.MethodPost, "/admin/finishItems", nil)
 	req.Header.Set("authorization", "admin_testing_token")
 	rec := httptest.NewRecorder()
 	s.Server.Handler.ServeHTTP(rec, req)
@@ -181,7 +181,7 @@ func TestHandleAdminFinish(t *testing.T) {
 	key2 := newValidKey(t, s)
 	newValidKey(t, s)
 
-	req := httptest.NewRequest(http.MethodGet, "/admin/finishItems?n=2", nil)
+	req := httptest.NewRequest(http.MethodPost, "/admin/finishItems?n=2", nil)
 	req.Header.Set("authorization", "admin_testing_token")
 	rec := httptest.NewRecorder()
 	s.Server.Handler.ServeHTTP(rec, req)
@@ -207,9 +207,9 @@ func TestHandleAdminFinishDefault(t *testing.T) {
 	newValidKey(t, s)
 	newValidKey(t, s)
 
-	for _, url := range []string{"/admin/finishItems", "/admin/finishItems?n=abc", "/admin/finishItems?n=-1"} {
+	for _, url := range []string{"/admin/finishItems"} {
 		newValidKey(t, s)
-		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req := httptest.NewRequest(http.MethodPost, url, nil)
 		req.Header.Set("authorization", "admin_testing_token")
 		rec := httptest.NewRecorder()
 		s.Server.Handler.ServeHTTP(rec, req)
@@ -229,7 +229,7 @@ func TestHandleAdminGetFinished(t *testing.T) {
 	s.SetAdminAcessToken("admin_testing_token")
 	key := newValidKey(t, s)
 
-	req := httptest.NewRequest(http.MethodGet, "/admin/finishItems", nil)
+	req := httptest.NewRequest(http.MethodPost, "/admin/finishItems", nil)
 	req.Header.Set("authorization", "admin_testing_token")
 	rec := httptest.NewRecorder()
 	s.Server.Handler.ServeHTTP(rec, req)
@@ -280,7 +280,7 @@ func TestHandleAdminDeleteFinished(t *testing.T) {
 	s.SetAdminAcessToken("admin_testing_token")
 	key := newValidKey(t, s)
 
-	req := httptest.NewRequest(http.MethodGet, "/admin/finishItems", nil)
+	req := httptest.NewRequest(http.MethodPost, "/admin/finishItems", nil)
 	req.Header.Set("authorization", "admin_testing_token")
 	rec := httptest.NewRecorder()
 	s.Server.Handler.ServeHTTP(rec, req)
@@ -318,7 +318,7 @@ func TestHandleAdminClearFinished(t *testing.T) {
 	s.SetAdminAcessToken("admin_testing_token")
 	key := newValidKey(t, s)
 
-	req := httptest.NewRequest(http.MethodGet, "/admin/finishItems", nil)
+	req := httptest.NewRequest(http.MethodPost, "/admin/finishItems", nil)
 	req.Header.Set("authorization", "admin_testing_token")
 	rec := httptest.NewRecorder()
 	s.Server.Handler.ServeHTTP(rec, req)
@@ -396,11 +396,31 @@ func BenchmarkHandleAdminFinish(b *testing.B) {
 	s.SetAdminAcessToken("admin_testing_token")
 	reqEnter := httptest.NewRequest(http.MethodPost, "/enter", nil)
 	reqEnter.Header.Set("authorization", "admin_testing_token")
-	reqFinish := httptest.NewRequest(http.MethodGet, "/admin/finishItems", nil)
+	reqFinish := httptest.NewRequest(http.MethodPost, "/admin/finishItems", nil)
 	reqEnter.Header.Set("authorization", "admin_testing_token")
 
 	for b.Loop() {
 		s.Server.Handler.ServeHTTP(httptest.NewRecorder(), reqEnter)
 		s.Server.Handler.ServeHTTP(httptest.NewRecorder(), reqFinish)
+	}
+}
+
+func TestFinishRejectsInvalidCountWithoutMutation(t *testing.T) {
+	for _, query := range []string{"n=0", "n=-1", "n=abc", "n=", "n", "n=1.5", "n=999999999999999999999999", "n=1&n=2", "n=%zz"} {
+		t.Run(query, func(t *testing.T) {
+			s := newTestServer()
+			s.SetAdminAcessToken("admin_testing_token")
+			key := newValidKey(t, s)
+			req := httptest.NewRequest(http.MethodPost, "/admin/finishItems?"+query, nil)
+			req.Header.Set("Authorization", "admin_testing_token")
+			w := httptest.NewRecorder()
+			s.Server.Handler.ServeHTTP(w, req)
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d: %s", w.Code, w.Body)
+			}
+			if s.repo.GetCurrentQueueSize() != 1 || s.repo.GetAndPingItemByKey(key) == nil || s.repo.GetFinished(key) != nil {
+				t.Fatal("invalid count changed queue state")
+			}
+		})
 	}
 }
