@@ -15,6 +15,9 @@ func TestDefaultConfigAppliedToServices(t *testing.T) {
 		write bool
 	}{
 		{name: "missing"},
+		{name: "invalid recaptcha type", data: `{"recaptchaSecretKey":123}`, write: true},
+		{name: "invalid turnstile type", data: `{"turnstileSecretKey":false}`, write: true},
+		{name: "invalid after captcha", data: `{"recaptchaSecretKey":"secret","turnstileSecretKey":"secret","pingTimeout":"invalid"}`, write: true},
 		{name: "invalid certificate type", data: `{"tlsCertFile":123}`, write: true},
 		{name: "invalid key type", data: `{"tlsKeyFile":123}`, write: true},
 		{name: "invalid after TLS fields", data: `{"tlsCertFile":"cert.pem","tlsKeyFile":"key.pem","pingTimeout":"invalid"}`, write: true},
@@ -46,6 +49,9 @@ func TestDefaultConfigAppliedToServices(t *testing.T) {
 			srv, repo, pst := server.InitServer(), repository.InitRepository(), repository.InitPersistence()
 			c.SetServices(srv, repo, log.InitService(), pst)
 			c.Start()
+			if c.RecaptchaSecretKey != "" || c.TurnstileSecretKey != "" || srv.RecaptchaSecretKey != "" || srv.TurnstileSecretKey != "" {
+				t.Fatal("default CAPTCHA settings were not preserved")
+			}
 			if srv.CORSAllowedOrigin != "" || c.CORSAllowedOrigin != "" {
 				t.Fatal("default CORS origin was not preserved")
 			}
@@ -123,5 +129,27 @@ func TestPartialConfigPreservesUnspecifiedDefaults(t *testing.T) {
 	before.ServerPort = 9090
 	if *c != before {
 		t.Fatalf("partial config changed unspecified fields: got %+v, want %+v", *c, before)
+	}
+}
+
+func TestCaptchaConfigApplied(t *testing.T) {
+	for _, provider := range []string{"recaptchaSecretKey", "turnstileSecretKey"} {
+		t.Run(provider, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			if err := os.WriteFile("gohvq_config.json", []byte(`{"`+provider+`":"private-secret"}`), 0600); err != nil {
+				t.Fatal(err)
+			}
+			c := InitService()
+			srv := server.InitServer()
+			c.SetServices(srv, nil, nil, nil)
+			c.Start()
+			if provider == "recaptchaSecretKey" {
+				if srv.RecaptchaSecretKey != "private-secret" || srv.TurnstileSecretKey != "" {
+					t.Fatal("incorrect Google configuration")
+				}
+			} else if srv.TurnstileSecretKey != "private-secret" || srv.RecaptchaSecretKey != "" {
+				t.Fatal("incorrect Cloudflare configuration")
+			}
+		})
 	}
 }

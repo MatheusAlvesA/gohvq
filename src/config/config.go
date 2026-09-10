@@ -10,13 +10,15 @@ import (
 )
 
 type ConfigService struct {
-	TLSCertFile       string `json:"tlsCertFile,omitempty"`
-	TLSKeyFile        string `json:"tlsKeyFile,omitempty"`
-	LocalhostOnly     bool   `json:"localHostOnly"`
-	ServerPort        uint32 `json:"serverPort"`
-	AdminToken        string `json:"adminToken"`
-	ClientIPHeader    string `json:"clientIPHeader,omitempty"`
-	CORSAllowedOrigin string `json:"corsAllowedOrigin,omitempty"`
+	RecaptchaSecretKey string `json:"recaptchaSecretKey,omitempty"`
+	TurnstileSecretKey string `json:"turnstileSecretKey,omitempty"`
+	TLSCertFile        string `json:"tlsCertFile,omitempty"`
+	TLSKeyFile         string `json:"tlsKeyFile,omitempty"`
+	LocalhostOnly      bool   `json:"localHostOnly"`
+	ServerPort         uint32 `json:"serverPort"`
+	AdminToken         string `json:"adminToken"`
+	ClientIPHeader     string `json:"clientIPHeader,omitempty"`
+	CORSAllowedOrigin  string `json:"corsAllowedOrigin,omitempty"`
 
 	PersistenceEnabled bool `json:"persistenceEnabled,omitempty"`
 
@@ -40,6 +42,8 @@ func (c *ConfigService) applyInitialToServer() {
 	c.srv.TLSCertFile = c.TLSCertFile
 	c.srv.TLSKeyFile = c.TLSKeyFile
 	c.srv.AccessTk = c.AdminToken
+	c.srv.RecaptchaSecretKey = c.RecaptchaSecretKey
+	c.srv.TurnstileSecretKey = c.TurnstileSecretKey
 	c.srv.ClientIPHeader = c.ClientIPHeader
 	c.srv.CORSAllowedOrigin = c.CORSAllowedOrigin
 }

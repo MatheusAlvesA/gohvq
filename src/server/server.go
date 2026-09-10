@@ -20,14 +20,17 @@ import (
 )
 
 type Server struct {
-	TLSCertFile       string
-	TLSKeyFile        string
-	Server            *http.Server
-	repo              *repository.Repository
-	log               *log.LogService
-	AccessTk          string
-	ClientIPHeader    string
-	CORSAllowedOrigin string
+	RecaptchaSecretKey string
+	TurnstileSecretKey string
+	captchaClient      *http.Client
+	TLSCertFile        string
+	TLSKeyFile         string
+	Server             *http.Server
+	repo               *repository.Repository
+	log                *log.LogService
+	AccessTk           string
+	ClientIPHeader     string
+	CORSAllowedOrigin  string
 }
 
 func (s *Server) CheckAdminToken(token string) bool {
@@ -97,6 +100,9 @@ func handleEnter(s *Server, w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		json.MarshalWrite(w, map[string]string{"message": "Invalid client address"})
+		return
+	}
+	if !s.requireCaptcha(w, r) {
 		return
 	}
 	item, err := s.repo.CreateItem(addr.WithZone("").Unmap().String())
