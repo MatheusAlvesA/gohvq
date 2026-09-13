@@ -5,6 +5,9 @@ binary, configure a JSON file, and let clients join, check their position, and
 wait until your application admits them in FIFO order. No external database is
 required.
 
+The project has no external library or framework dependencies. It uses only
+the Go standard library.
+
 ## Highlights
 
 - **Built for performance:** a doubly linked list and maps keep most individual
@@ -143,7 +146,7 @@ the service logs the error and uses defaults.
 | Setting | Type | Default | Purpose |
 | --- | --- | --- | --- |
 | `localHostOnly` | Boolean | `false` | Bind to `127.0.0.1` when true; otherwise bind to `0.0.0.0`. |
-| `serverPort` | Nonnegative integer | `4242` | Listening port. Use 1–65535 for a fixed port, or 0 to let the OS select an available port. |
+| `serverPort` | Integer | `4242` | Listening port. Set an explicit port from 1 to 65535 so clients know where to connect. |
 | `adminToken` | String | Generated random token | Required in the `Authorization` header on all administrator routes. Send the token directly, without `Bearer`. Tokens shorter than 10 characters cannot authorize requests. The generated default is logged at startup and changes on restart. |
 | `clientIPHeader` | String | `""` | Header supplying the client IP, such as `X-Real-IP`. Empty uses the connection address and ignores forwarding headers. When set, entry and position requests require exactly one valid IP in this header or return 400. Administrator routes do not require it. |
 | `corsAllowedOrigin` | String | `""` | Browser origin allowed through CORS, such as `https://app.example.com`. Sends that origin with `Access-Control-Allow-Credentials: true`. Empty or `*` disables these permission headers. Use a complete origin without a path or trailing slash. |
@@ -320,3 +323,9 @@ end-to-end throughput guarantee.
 Further implementation details are available in the
 [configuration guide](src/config/CONFIGURATION.md) and
 [persistence format documentation](src/repository/PERSISTENCE.md).
+
+## Use of AI during development
+
+AI was used during the development of this project. All architectural decisions
+were made by the author. AI assisted with writing code faster, writing tests,
+and finding bugs.
