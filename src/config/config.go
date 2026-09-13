@@ -22,10 +22,11 @@ type ConfigService struct {
 
 	PersistenceEnabled bool `json:"persistenceEnabled,omitempty"`
 
-	QueueClearMaxSeconds uint `json:"clearMaxSeconds,omitempty"`
-	QueuePingTimeout     uint `json:"pingTimeout,omitempty"`
-	QueueClearFreq       uint `json:"clearFrequency,omitempty"`
-	QueueMaxEntriesPerIP uint `json:"maxEntriesPerIP,omitempty"`
+	QueueClearMaxSeconds uint   `json:"clearMaxSeconds,omitempty"`
+	QueuePingTimeout     uint   `json:"pingTimeout,omitempty"`
+	QueueClearFreq       uint   `json:"clearFrequency,omitempty"`
+	QueueMaxEntriesPerIP uint   `json:"maxEntriesPerIP,omitempty"`
+	QueueMaxSize         uint64 `json:"maxQueueSize,omitempty"`
 
 	srv *server.Server          `json:"-"`
 	rep *repository.Repository  `json:"-"`
@@ -53,6 +54,7 @@ func (c *ConfigService) applyInitialToRepository() {
 	c.rep.ClearMaxTime = c.QueueClearMaxSeconds
 	c.rep.PingTimeout = c.QueuePingTimeout
 	c.rep.MaxEntriesPerIP = c.QueueMaxEntriesPerIP
+	c.rep.MaxQueueSize = c.QueueMaxSize
 }
 
 func (c *ConfigService) applyInitialToPersistence() {

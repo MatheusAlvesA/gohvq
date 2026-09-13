@@ -25,6 +25,10 @@ func TestDefaultConfigAppliedToServices(t *testing.T) {
 		{name: "invalid after origin", data: `{"corsAllowedOrigin":"https://app.example.com","pingTimeout":"invalid"}`, write: true},
 		{name: "invalid header type", data: `{"clientIPHeader":123}`, write: true},
 		{name: "invalid after header", data: `{"clientIPHeader":"X-Real-IP","pingTimeout":"invalid"}`, write: true},
+		{name: "negative queue limit", data: `{"maxQueueSize":-1}`, write: true},
+		{name: "invalid queue limit type", data: `{"maxQueueSize":"10"}`, write: true},
+		{name: "overflow queue limit", data: `{"maxQueueSize":18446744073709551616}`, write: true},
+		{name: "invalid after queue limit", data: `{"maxQueueSize":10,"pingTimeout":"invalid"}`, write: true},
 		{name: "negative IP limit", data: `{"maxEntriesPerIP":-1}`, write: true},
 		{name: "invalid after IP limit", data: `{"maxEntriesPerIP":3,"pingTimeout":"invalid"}`, write: true},
 		{name: "empty", write: true},
@@ -64,7 +68,7 @@ func TestDefaultConfigAppliedToServices(t *testing.T) {
 			if srv.Server.Addr != "0.0.0.0:4242" || !srv.CheckAdminToken(token) {
 				t.Fatal("default address or generated admin token was not applied")
 			}
-			if repo.ClearMaxTime != 1 || repo.PingTimeout != 60 || repo.ClearFrequency != 10 || repo.MaxEntriesPerIP != 0 {
+			if repo.ClearMaxTime != 1 || repo.PingTimeout != 60 || repo.ClearFrequency != 10 || repo.MaxEntriesPerIP != 0 || repo.MaxQueueSize != 0 {
 				t.Fatal("default cleanup settings were not applied")
 			}
 			if !pst.Enabled || repo.Persistence != pst {
@@ -88,7 +92,8 @@ func TestCustomConfigAppliedToServices(t *testing.T) {
 		"clearMaxSeconds": 3,
 		"pingTimeout": 120,
 		"clearFrequency": 20,
- "maxEntriesPerIP": 3
+ "maxEntriesPerIP": 3,
+ "maxQueueSize": 100
 	}`
 	if err := os.WriteFile("gohvq_config.json", []byte(data), 0600); err != nil {
 		t.Fatal(err)
@@ -109,7 +114,7 @@ func TestCustomConfigAppliedToServices(t *testing.T) {
 	if srv.Server.Addr != "127.0.0.1:8181" || !srv.CheckAdminToken("custom_admin_token") {
 		t.Fatal("custom listen address or admin token was not applied")
 	}
-	if repo.ClearMaxTime != 3 || repo.PingTimeout != 120 || repo.ClearFrequency != 20 || repo.MaxEntriesPerIP != 3 {
+	if repo.ClearMaxTime != 3 || repo.PingTimeout != 120 || repo.ClearFrequency != 20 || repo.MaxEntriesPerIP != 3 || repo.MaxQueueSize != 100 {
 		t.Fatal("custom cleanup settings were not applied")
 	}
 	if pst.Enabled || repo.Persistence != pst {

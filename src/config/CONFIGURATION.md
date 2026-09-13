@@ -19,6 +19,7 @@ reject the entire configuration without partially applying valid fields.
 | `clearMaxSeconds` | Nonnegative integer | `1` | Time budget in seconds for each cleanup scan. `0` gives an immediate timeout budget; it does not disable the budget. |
 | `pingTimeout` | Nonnegative integer | `60` | An active ticket becomes eligible for removal when the seconds since its last ping exceed this value. `GET /position?key=...` refreshes the ping of an active ticket. `0` does not disable expiration. |
 | `clearFrequency` | Nonnegative integer | `10` | Minimum interval in seconds between the end of a cleanup scan and the next scan. The worker checks whether cleanup is due every 500 milliseconds. `0` makes cleanup eligible on every worker tick. |
+| `maxQueueSize` | Nonnegative integer | `0` | Maximum total active tickets. `0` means unlimited. Uses the item count, independent of stale positions. |
 | `maxEntriesPerIP` | Nonnegative integer | `0` | Maximum active tickets per IP. `0` means unlimited. See the admission behavior below. |
 
 For example, this configures the service and allows three active tickets
@@ -159,3 +160,19 @@ the server does not parse a CAPTCHA body or contact either provider.
 
 Protocol references: [Google verification](https://developers.google.com/recaptcha/docs/verify)
 and [Cloudflare validation](https://developers.cloudflare.com/turnstile/get-started/server-side-validation/).
+
+## Total queue capacity
+
+Set `"maxQueueSize": 1000` to allow at most 1,000 active tickets across all IPs.
+Omitting the setting or using zero leaves the queue unlimited. Admission checks
+the active item count under the same lock as insertion, in O(1) time.
+The last ticket's position is not used.
+
+When full, `POST /enter` returns HTTP 503 with
+`{"message":"Queue is full. Please try again later."}` without adding a ticket.
+Finishing, removing expired tickets during cleanup, or clearing the queue frees
+capacity; finished tickets do not count. The per-IP limit still applies.
+
+Persistence recovery preserves all saved tickets even when their count exceeds
+the configured capacity. New admissions wait until the active count falls below
+the limit. Restart the service to apply configuration changes.

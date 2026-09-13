@@ -106,6 +106,11 @@ func handleEnter(s *Server, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	item, err := s.repo.CreateItem(addr.WithZone("").Unmap().String())
+	if errors.Is(err, repository.ErrQueueFull) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.MarshalWrite(w, map[string]string{"message": "Queue is full. Please try again later."})
+		return
+	}
 	if errors.Is(err, repository.ErrIPLimitReached) {
 		w.WriteHeader(http.StatusTooManyRequests)
 		json.MarshalWrite(w, map[string]string{"message": "Queue entry limit reached for IP"})

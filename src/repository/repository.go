@@ -18,6 +18,9 @@ const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 // ErrIPLimitReached indicates that the IP already has its allowed active tickets.
 var ErrIPLimitReached = errors.New("queue entry limit reached for IP")
 
+// ErrQueueFull indicates that the active queue has reached its capacity.
+var ErrQueueFull = errors.New("queue is full")
+
 type Repository struct {
 	Head        *QueueHead
 	ItemMap     map[string]*QueueItem
@@ -26,7 +29,9 @@ type Repository struct {
 
 	// MaxEntriesPerIP limits active tickets per IP; zero disables the limit.
 	MaxEntriesPerIP uint
-	ipCounts        map[string]uint64 // Protected by mu, including when the limit is disabled.
+	// MaxQueueSize limits active tickets across all IPs; zero disables the limit.
+	MaxQueueSize uint64
+	ipCounts     map[string]uint64 // Protected by mu, including when the limit is disabled.
 
 	PingTimeout    uint
 	ClearFrequency uint
@@ -78,6 +83,9 @@ func (r *Repository) CreateItem(ip string) (*ItemSnapshot, error) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.MaxQueueSize > 0 && r.Head.Length.Load() >= r.MaxQueueSize {
+		return nil, ErrQueueFull
+	}
 	if r.MaxEntriesPerIP > 0 && r.ipCounts[ip] >= uint64(r.MaxEntriesPerIP) {
 		return nil, ErrIPLimitReached
 	}
