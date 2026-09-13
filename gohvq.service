@@ -1,0 +1,28 @@
+[Unit]
+Description=Go Human Virtual Queue HTTP API
+After=network.target
+
+[Service]
+Type=simple
+User=gohvq
+Group=gohvq
+# systemd creates this writable directory and assigns it to the service user.
+StateDirectory=gohvq
+StateDirectoryMode=0750
+# Configuration and persistence are resolved relative to this directory.
+WorkingDirectory=/var/lib/gohvq
+ExecStart=/usr/local/bin/gohvq
+Restart=on-failure
+RestartSec=5s
+# SIGTERM triggers HTTP shutdown, cleanup shutdown, then persistence draining.
+KillSignal=SIGTERM
+TimeoutStopSec=120s
+UMask=0027
+NoNewPrivileges=true
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
